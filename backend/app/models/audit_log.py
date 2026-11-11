@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class AuditLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Immutable-style audit trail of security and operational actions."""
+    """Application-level append-only audit trail of security and operational actions."""
 
     __tablename__ = "audit_logs"
     __table_args__ = (

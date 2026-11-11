@@ -5,7 +5,7 @@ Covers all Phase 2 Final Acceptance Audit categories:
 2. RBAC Enforcement across Admin, Security Analyst, and Viewer roles + Error Hygiene.
 3. Log Ingestion Engine (CSV, JSON, Invalid Format, Duplicates, Invalid Rows, Empty File, Oversized Payload, Control Chars & Malicious Payloads).
 4. Threat Detection Engine (All 6 Rules + False-Positive Boundaries), Event Correlation Engine (Multi-Factor + Anti-Severity-Only Grouping), and Risk Scoring Engine (0-100 Combinations & Clamping).
-5. Incident Lifecycle (Create, Assign Analyst, Change Status, Link Events, Investigation Notes, Resolve) & Immutable Audit Trail.
+5. Incident Lifecycle (Create, Assign Analyst, Change Status, Link Events, Investigation Notes, Resolve) & Append-Only Audit Trail.
 """
 
 from datetime import timedelta

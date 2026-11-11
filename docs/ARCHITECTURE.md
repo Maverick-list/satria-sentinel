@@ -10,7 +10,7 @@ flowchart LR
         UI_Events["Log Ingestion, Synthetic Gen & Detections"]
         UI_Inc["Incident Case Management & Timeline"]
         UI_PB["Advisory Response Playbooks"]
-        UI_Audit["Immutable Audit Trail"]
+        UI_Audit["Application-Level Audit Trail"]
         UI_Auth["Auth & RBAC Context (JWT)"]
     end
 

@@ -14,11 +14,11 @@
 
 ## 1. Gambaran Umum Proyek & Batasan Ruang Lingkup
 
-**SATRIA SENTINEL** adalah prototipe platform komando pertahanan siber defensif (*Defensive Security Operations Prototype*) yang dikembangkan untuk tujuan evaluasi, riset, dan simulasi penangkalan insiden siber pada **Kartika Cyber Hackathon 2026**.
+**SATRIA SENTINEL** adalah prototipe perangkat lunak pertahanan siber defensif (*Defensive Cybersecurity Software Prototype*) yang dikembangkan khusus untuk tujuan pengujian, evaluasi, dan simulasi skenario penangkalan insiden siber pada **Kartika Cyber Hackathon 2026**.
 
 > [!IMPORTANT]
-> **Pernyataan Batasan & Posisioning Sistem**:  
-> SATRIA SENTINEL adalah **prototipe perangkat lunak defensif untuk pengujian dan evaluasi kompetisi**. Platform ini **tidak mengklaim** sertifikasi keamanan militer resmi, penyebaran operasional militer nyata (*real-world military deployment*), maupun adopsi SOP militer resmi. Seluruh data telemetri yang digunakan dalam demonstrasi adalah **100% data simulasi sintetis**.
+> **Pernyataan Batasan & Posisioning Prototipe**:  
+> SATRIA SENTINEL adalah **prototipe perangkat lunak defensif untuk pengujian dan evaluasi kompetisi hackathon**. Platform ini **tidak mengklaim** sertifikasi keamanan militer resmi, penyebaran operasional militer nyata (*real-world military deployment*), adopsi SOP militer resmi, maupun keterhubungan dengan Pusat Operasi Keamanan (SOC) militer aktif. Seluruh data telemetri yang digunakan dalam demonstrasi adalah **100% data simulasi sintetis**. Jejak audit dicatat secara *append-only* pada lapisan aplikasi dan **bukan** media penyimpanan kekal kriptografis (*immutable storage*); modifikasi langsung pada tingkat database PostgreSQL tidak dicegah secara teknis.
 
 ### Pilar Fungsional Prototipe
 1. **Pemetaan Aset Berbasis Kritikalitas**: Mengelola inventaris aset digital dengan pembobotan risiko berbasis signifikansi operasional (+6 s/d +25 poin).
@@ -33,24 +33,46 @@
    $$\text{Skor} = \min(100, \text{Severity}[0..35] + \text{Asset}[0..25] + \text{Confidence}[0..20] + \text{Volume}[0..10] + \text{Context}[0..10])$$
    - Kategori: Low ($0-29$), Medium ($30-54$), High ($55-79$), Critical ($80-100$).
 4. **Ruang Kerja Siklus Hidup Insiden**: Alur kerja investigasi lengkap ($\text{open} \to \text{investigating} \to \text{contained} \to \text{closed}$) dengan kewajiban dokumentasi catatan akar masalah (*root cause*).
-5. **Katalog SOP Response Playbooks**: Rekomendasi playbook penanganan pertahanan terstandarisasi NIST SP 800-61 (`PB-IR-001` s.d. `PB-IR-005`) dengan pagar pengaman *Human-in-the-Loop* (advisory only).
-6. **Jejak Audit Append-Only Tingkat Aplikasi**: Pencatatan jejak audit append-only di tingkat aplikasi/API untuk setiap mutasi data (*Catatan: modifikasi langsung pada tingkat database PostgreSQL tidak dicegah secara teknis*).
+5. **Katalog Advisory Response Playbooks**: Rekomendasi panduan tindakan pertahanan terstandarisasi NIST SP 800-61 (6 Playbook: SSH Brute Force, Credential Spray, Database Isolation, Privilege Revocation, Network Quarantine, IP Blocking) dengan pagar pengaman *Human-in-the-Loop* (advisory only, tanpa eksekusi otomatis destruktif).
+6. **Jejak Audit Append-Only Tingkat Aplikasi**: Pencatatan jejak audit hanya-tambah (*append-only*) pada tingkat aplikasi/API untuk setiap mutasi dan aksi operasional (*Catatan: modifikasi langsung pada tingkat database PostgreSQL tidak dicegah secara teknis*).
 
 ---
 
 ## 2. Galeri Tangkapan Layar Prototipe Nyata (*Genuine Screenshots*)
 
-Seluruh tangkapan layar diambil langsung dari aplikasi yang berjalan aktif dan tersedia di [`docs/screenshots/`](docs/screenshots/):
+Seluruh tangkapan layar di bawah ini diambil langsung dari aplikasi prototipe yang berjalan aktif pada lingkungan lokal dan tersimpan di direktori [`docs/screenshots/`](docs/screenshots/):
 
-| Command Center Dashboard (`/`) | Operator Login & Role Presets |
-| :---: | :---: |
-| ![Dashboard](docs/screenshots/01_dashboard_desktop.png) | ![Login](docs/screenshots/00_login_modal_desktop.png) |
-| **Asset Inventory (`/assets`)** | **Security Events & Ingestion (`/security-events`)** |
-| ![Assets](docs/screenshots/02_assets_desktop.png) | ![Events](docs/screenshots/03_security_events_desktop.png) |
-| **Detection & Correlation (`/detection-correlation`)** | **Incident Investigation Workspace (`/incidents`)** |
-| ![Detections](docs/screenshots/04_detection_correlation_desktop.png) | ![Incidents](docs/screenshots/05_incidents_desktop.png) |
-| **Response Playbooks (`/playbooks`)** | **Audit Logs (Append-Only) (`/audit-logs`)** |
-| ![Playbooks](docs/screenshots/06_playbooks_desktop.png) | ![Audit Logs](docs/screenshots/07_audit_logs_desktop.png) |
+### Command Center Dashboard (`/`)
+*Visualisasi ringkasan postur pertahanan, metriks ancaman aktif, sebaran tingkat keparahan, dan log anomali.*  
+![Command Center Dashboard](docs/screenshots/01_dashboard_desktop.png)
+
+### Operator Authentication & Evaluation Role Presets
+*Modal autentikasi aman dengan tombol preset instan (Admin, Analyst, Viewer) untuk pengujian evaluasi.*  
+![Operator Login Modal](docs/screenshots/00_login_modal_desktop.png)
+
+### Digital Asset Inventory (`/assets`)
+*Inventarisasi aset digital dengan pembobotan tingkat kritikalitas operasional untuk skor risiko.*  
+![Asset Inventory](docs/screenshots/02_assets_desktop.png)
+
+### Security Events & Log Ingestion (`/security-events`)
+*Pusat ingesti log keamanan multi-format (CSV/JSON), sanitasi input, dan generator telemetri simulasi sintetis.*  
+![Security Events and Ingestion](docs/screenshots/03_security_events_desktop.png)
+
+### Detection Rules & Multi-Factor Correlation (`/detection-correlation`)
+*Mesin deteksi 6 aturan deterministik dan pengelompokan anomali korelasi multi-faktor secara transparan.*  
+![Detection and Correlation](docs/screenshots/04_detection_correlation_desktop.png)
+
+### Incident Investigation Workspace (`/incidents`)
+*Alur investigasi insiden lengkap (Open -> Investigating -> Contained -> Closed) dengan kewajiban dokumentasi akar masalah.*  
+![Incident Investigation Workspace](docs/screenshots/05_incidents_desktop.png)
+
+### Defensive Response Playbooks (`/playbooks`)
+*Katalog panduan respons defensif terstandarisasi NIST SP 800-61 dengan instruksi langkah-demi-langkah berpagar Human-in-the-Loop.*  
+![Response Playbooks](docs/screenshots/06_playbooks_desktop.png)
+
+### Application-Level Audit Logs (`/audit-logs`)
+*Pencatatan jejak audit append-only tingkat aplikasi untuk seluruh aksi operasional operator dan mutasi sistem.*  
+![Application-Level Audit Logs](docs/screenshots/07_audit_logs_desktop.png)
 
 ---
 
@@ -71,16 +93,16 @@ Seluruh tangkapan layar diambil langsung dari aplikasi yang berjalan aktif dan t
 
 ```mermaid
 graph TD
-    Client["SOC Analyst / Evaluator (Desktop / Mobile Browser)"] -->|HTTPS / Bearer JWT| NextFrontend["Next.js 15 App Router Frontend (:3000)"]
+    Client["Security Analyst / Evaluator (Desktop / Mobile Browser)"] -->|HTTPS / Bearer JWT| NextFrontend["Next.js 15 App Router Frontend (:3000)"]
     NextFrontend -->|REST API Calls / JSON| FastAPIGateway["FastAPI Backend Gateway (:8000)"]
     
     subgraph SecurityEngines["Mesin Pemrosesan Pertahanan (Defensive Engines)"]
         FastAPIGateway --> IngestSanitizer["1. Log Sanitizer & SHA-256 Deduplication"]
-        IngestSanitizer --> DetectionRules["2. Deterministic Rule Engine (6 SOP Rules)"]
+        IngestSanitizer --> DetectionRules["2. Deterministic Rule Engine (6 Active Rules)"]
         DetectionRules --> CorrelationMatrix["3. Multi-Factor Correlation Clustering"]
         CorrelationMatrix --> RiskScoring["4. Explainable 5-Factor Risk Engine (0-100)"]
-        RiskScoring --> IncidentMgmt["5. Incident Lifecycle & Playbooks SOP"]
-        IncidentMgmt --> AuditRecorder["6. Append-Only Audit Logger"]
+        RiskScoring --> IncidentMgmt["5. Incident Lifecycle & Advisory Playbooks"]
+        IncidentMgmt --> AuditRecorder["6. Application-Level Append-Only Audit Logger"]
     end
     
     SecurityEngines -->|SQLAlchemy ORM| PostgresDB[("PostgreSQL 16 Relational DB (:5432)")]
@@ -163,14 +185,14 @@ Seluruh suite pengujian otomatis telah dieksekusi dengan hasil **100% LULUS**:
 
 ### Berkas Submisi Kompetisi (`submission/`)
 - [`submission/PROJECT_DESCRIPTION.md`](submission/PROJECT_DESCRIPTION.md) — Proposal submisi resmi kategori Penangkalan.
-- [`submission/DEMO_SCRIPT.md`](submission/DEMO_SCRIPT.md) — Naskah video demonstrasi 10 menit dengan panduan visual.
+- [`submission/DEMO_SCRIPT.md`](submission/DEMO_SCRIPT.md) — Naskah demonstrasi video evaluasi juri (10 menit).
 - [`submission/PRESENTATION_OUTLINE.md`](submission/PRESENTATION_OUTLINE.md) — Kerangka presentasi 10 slide untuk dewan juri.
-- [`submission/SCREENSHOT_CHECKLIST.md`](submission/SCREENSHOT_CHECKLIST.md) — Panduan 5 tangkapan layar utama antarmuka.
-- [`submission/THUMBNAIL_SPEC.md`](submission/THUMBNAIL_SPEC.md) — Spesifikasi teknis thumbnail video YouTube (1200x630 px).
+- [`submission/SCREENSHOT_CHECKLIST.md`](submission/SCREENSHOT_CHECKLIST.md) — Panduan tangkapan layar antarmuka prototipe.
+- [`submission/THUMBNAIL_SPEC.md`](submission/THUMBNAIL_SPEC.md) — Spesifikasi desain thumbnail video (1200 × 630 px, < 500 KB).
 
 ---
 
 ## 8. Lisensi & Hak Cipta
 
 Dikembangkan oleh **Tim SATRIA SENTINEL** untuk **Kartika Cyber Hackathon 2026**.  
-*Lisensi: Open Source untuk kepentingan riset, evaluasi pertahanan siber, dan kompetisi pertahanan.*
+*Lisensi: Open Source untuk kepentingan riset, evaluasi pertahanan siber, dan kompetisi pertahanan nasional.*

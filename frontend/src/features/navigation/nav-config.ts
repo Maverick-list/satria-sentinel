@@ -58,7 +58,7 @@ export const COMMAND_CENTER_NAV_ITEMS: NavItem[] = [
     href: "/audit-logs",
     icon: FileSearch,
     badgeText: "Trail",
-    description: "Immutable-style operator and system audit trail",
+    description: "Application-level append-only operator and system audit trail",
   },
   {
     title: "Settings",

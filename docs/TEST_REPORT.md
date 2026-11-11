@@ -52,7 +52,7 @@ File pengujian: [`frontend/tests/e2e/foundation.spec.ts`](../frontend/tests/e2e/
    - Memverifikasi telemetri kesehatan PostgreSQL (`7 / 7 Tables Verified`), **Analyst Priority Attention Queue**, **Asset Risk Overview**, **Recent Incident Activity**, pergantian peran dari `admin` ke `viewer` melalui modal login, penyembunyian aksi tulis (*Add Asset*) bagi `viewer`, dan pergantian kembali ke `admin`.
 2. **`2. Synthetic Generator, CSV/JSON Ingestion, Detections, Correlations, Escalation & Incident Investigation`** (`PASSED` — `2.7s`):
    - Memverifikasi pembangkitan skenario sintetis, impor log JSON langsung dari UI, eskalasi klaster korelasi ke insiden, penugasan analis (`incident-assign-submit`), pemeriksaan panel **Affected Assets**, **Detection Findings**, dan **Recommended Playbook**, perubahan status insiden ke `containment`, penambahan catatan investigasi, serta resolusi insiden beserta lini masa kronologis.
-3. **`3. Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation`** (`PASSED` — `1.1s`):
+3. **`3. Playbooks Advisory Matcher, Append-Only Audit Logs, and 7-Page Navigation`** (`PASSED` — `1.1s`):
    - Memverifikasi banner peringatan *Advisory-Only*, pencocokan rekomendasi *playbook* pada `/playbooks`, pemeriksaan tabel jejak audit pada `/audit-logs`, dan transisi navigasi di seluruh 7 halaman utama.
 4. **`4. Complete 18-Step Repeatable Demonstration Scenario & Zero Console/Page Errors`** (`PASSED` — `1.8s`):
    - Menjalankan skenario demonstrasi operasional 18 langkah secara utuh sebagai `security_analyst`:

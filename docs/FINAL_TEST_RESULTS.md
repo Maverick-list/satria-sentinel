@@ -65,7 +65,7 @@ Running 4 tests using 1 worker
 
   ✓ 1. Command Center Health, Priority Attention Queue, Asset Risk Overview & RBAC Role Switching (788ms)
   ✓ 2. Security Event Ingestion, Detections, Correlations, Escalation & Incident Investigation (2.1s)
-  ✓ 3. Visual Regression, Response Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation (873ms)
+  ✓ 3. Visual Regression, Response Playbooks Advisory Matcher, Append-Only Audit Logs, and 7-Page Navigation (873ms)
   ✓ 4. Complete 18-Step Repeatable Demonstration Scenario & Zero Console/Page Errors (1.6s)
 
   4 passed (5.8s)

@@ -23,7 +23,7 @@ async function runBrowserVerification() {
       { name: "Detection Rules & Correlation", route: "/detection-correlation" },
       { name: "Incidents & Response Workspace", route: "/incidents" },
       { name: "Defensive Response Playbooks", route: "/playbooks" },
-      { name: "Immutable Audit Logs", route: "/audit-logs" },
+      { name: "Append-Only Audit Logs", route: "/audit-logs" },
       { name: "Platform Settings & Security Baseline", route: "/settings" },
     ],
     workflows: [],
@@ -290,8 +290,8 @@ async function runBrowserVerification() {
     });
   }
 
-  // Workflow 9: Immutable Audit Logs
-  console.log("[Workflow 9] Immutable Audit Trail...");
+  // Workflow 9: Append-Only Audit Logs
+  console.log("[Workflow 9] Append-Only Audit Trail...");
   try {
     await page.getByTestId("nav-link-audit-logs").click();
     await page.waitForSelector('[data-testid="audit-logs-table"]', { timeout: 8000 });
@@ -300,15 +300,15 @@ async function runBrowserVerification() {
     const hasLogin = tableText?.includes("auth.login_success") || tableText?.includes("incident.");
 
     report.workflows.push({
-      name: "Immutable Audit Trail",
+      name: "Append-Only Audit Trail",
       expected: "All security-critical actions recorded with actor, action type, and client IP in append-only table",
       actual: `Audit log entries captured: hasAnalyst=${hasAnalyst}, hasOperationalActions=${hasLogin}`,
       status: hasAnalyst || hasLogin ? "PASS" : "FAIL",
     });
-    console.log("  ✓ Immutable Audit Trail verified");
+    console.log("  ✓ Append-Only Audit Trail verified");
   } catch (e) {
     report.workflows.push({
-      name: "Immutable Audit Trail",
+      name: "Append-Only Audit Trail",
       expected: "Audit logs captured",
       actual: e.message,
       status: "FAIL",

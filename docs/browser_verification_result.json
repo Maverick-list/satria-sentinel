@@ -30,7 +30,7 @@
       "route": "/playbooks"
     },
     {
-      "name": "Immutable Audit Logs",
+      "name": "Append-Only Audit Logs",
       "route": "/audit-logs"
     },
     {
@@ -88,7 +88,7 @@
       "status": "PASS"
     },
     {
-      "name": "Immutable Audit Trail",
+      "name": "Append-Only Audit Trail",
       "expected": "All security-critical actions recorded with actor, action type, and client IP in append-only table",
       "actual": "Audit log entries captured: hasAnalyst=true, hasOperationalActions=true",
       "status": "PASS"

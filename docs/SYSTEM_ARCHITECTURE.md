@@ -54,7 +54,7 @@ backend/app/
 │           ├── detections.py   # Eksekusi 6 aturan deteksi deterministik
 │           ├── correlations.py # Pengelompokan klaster ancaman multidimensi
 │           ├── incidents.py    # Manajemen lifecycle insiden, penugasan, dan resolusi
-│           ├── playbooks.py    # SOP playbook terpandu dan rekomendasi cerdas
+│           ├── playbooks.py    # Katalog response playbook terpandu dan rekomendasi cerdas
 │           ├── audit_logs.py   # Endpoint audit trail append-only (Viewer/Analyst/Admin)
 │           ├── risk.py         # Metodologi dan kalkulasi skor risiko
 │           └── health.py       # Liveness probe, readiness probe, dan cek koneksi DB
@@ -77,8 +77,8 @@ backend/app/
     ├── detection_service.py    # Evaluasi deterministik 6 aturan deteksi keamanan
     ├── correlation_engine.py   # Algoritma korelasi multivariat temporal dan aset
     ├── risk_service.py         # Formula matematis pembobotan risiko 5 faktor
-    ├── playbook_service.py     # Rekomendasi otomatis SOP berdasarkan tipe insiden
-    ├── audit_service.py        # Pembuatan rekaman audit log append-only
+    ├── playbook_service.py     # Rekomendasi otomatis response playbook terpandu
+    ├── audit_service.py        # Pembuatan rekaman audit log append-only tingkat aplikasi
     └── bootstrap_service.py    # Auto-seeding aset strategis dan akun demo
 ```
 
@@ -97,8 +97,8 @@ frontend/src/
 │   ├── security-events/page.tsx# Ingesti Log (CSV/JSON/Sintetis) dan Tabel Event
 │   ├── detection-correlation/  # Analisis Aturan Deteksi dan Klaster Korelasi
 │   ├── incidents/page.tsx      # Ruang Kerja Investigasi dan Lifecycle Insiden
-│   ├── playbooks/page.tsx      # Katalog SOP Penanganan Insiden & CLI Commands
-│   ├── audit-logs/page.tsx     # Rekaman Jejak Audit yang Tidak Dapat Diubah
+│   ├── playbooks/page.tsx      # Katalog Response Playbooks Penanganan Insiden & CLI Commands
+│   ├── audit-logs/page.tsx     # Rekaman Jejak Audit Append-Only Tingkat Aplikasi
 │   └── settings/page.tsx       # Baseline Keamanan, Arsitektur, dan Konfigurasi
 ├── components/
 │   ├── layout/                 # Sidebar Navigasi, Top Header, dan Role Switcher
@@ -118,4 +118,4 @@ frontend/src/
 
 1. **Prinsip Hak Akses Terkecil (Least Privilege)**: Pengguna hanya dapat mengakses atau memodifikasi data sesuai perannya. Viewer tidak dapat mengakses tombol aksi penulisan (*mutation*).
 2. **Explainability First**: Setiap deteksi ancaman dan angka risiko harus memiliki alasan matematis dan bukti log yang dapat diperiksa oleh manusia (*human verifiable*).
-3. **Defensive Isolation**: Tidak ada perintah destruktif otomatis ke infrastruktur; seluruh tindakan perbaikan dijalankan dengan rekomendasi SOP (*Human-in-the-Loop*).
+3. **Defensive Isolation**: Tidak ada perintah destruktif otomatis ke infrastruktur; seluruh tindakan mitigasi dijalankan melalui panduan playbook terstandarisasi dengan konfirmasi analis (*Human-in-the-Loop*).

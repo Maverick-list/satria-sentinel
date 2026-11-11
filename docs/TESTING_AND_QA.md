@@ -84,7 +84,7 @@ cd frontend && npx playwright test
 Hasil:
 - `Test 1: Health, Priority Attention Queue, Asset Risk Overview & RBAC Role Switching` -> **PASSED (788ms)**
 - `Test 2: Security Event Ingestion, Detections, Correlations, Escalation & Incident Investigation` -> **PASSED (2.1s)**
-- `Test 3: Visual Regression, Response Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation` -> **PASSED (873ms)**
+- `Test 3: Visual Regression, Response Playbooks Advisory Matcher, Append-Only Audit Logs, and 7-Page Navigation` -> **PASSED (873ms)**
 - `Test 4: Complete 18-Step Repeatable Demonstration Scenario & Zero Console/Page Errors` -> **PASSED (1.6s)**
 
 ---

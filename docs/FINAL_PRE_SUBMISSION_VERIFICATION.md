@@ -112,7 +112,7 @@ tests/test_phase2_engine.py::test_incident_complete_lifecycle_open_investigating
 Running 4 tests using 1 worker
   ✓ 1. Command Center Health, Priority Attention Queue, Asset Risk Overview & RBAC Role Switching (893ms)
   ✓ 2. Security Event Ingestion, Detections, Correlations, Escalation & Incident Investigation (2.2s)
-  ✓ 3. Visual Regression, Response Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation (962ms)
+  ✓ 3. Visual Regression, Response Playbooks Advisory Matcher, Append-Only Audit Logs, and 7-Page Navigation (962ms)
   ✓ 4. Complete 18-Step Repeatable Demonstration Scenario & Zero Console/Page Errors (2.1s)
 4 passed (6.7s)
 ```

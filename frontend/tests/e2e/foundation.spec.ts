@@ -157,7 +157,7 @@ test.describe("SATRIA SENTINEL — Phase 3 Command Center & Operational Workflow
     );
   });
 
-  test("3. Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation", async ({
+  test("3. Playbooks Advisory Matcher, Append-Only Audit Logs, and 7-Page Navigation", async ({
     page,
   }) => {
     await page.goto("/playbooks");
