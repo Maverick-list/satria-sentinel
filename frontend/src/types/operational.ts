@@ -158,9 +158,28 @@ export interface DetectionRuleItem {
   playbook_code: string;
 }
 
+export interface AssetRiskOverviewItem {
+  id: string;
+  asset_tag: string;
+  name: string;
+  hostname: string | null;
+  ip_address: string | null;
+  environment: string;
+  criticality: string;
+  status: string;
+  event_count: number;
+  detections_count: number;
+  peak_risk_score: number;
+  risk_level: string;
+}
+
 export interface RiskSummaryResponse {
   total_assets: number;
+  critical_assets_count?: number;
   total_events: number;
+  synthetic_events_count?: number;
+  non_synthetic_events_count?: number;
+  high_risk_findings_count?: number;
   total_incidents: number;
   open_incidents: number;
   average_event_risk_score: number;
@@ -171,15 +190,56 @@ export interface RiskSummaryResponse {
     high: number;
     critical: number;
   };
+  event_severity_distribution?: {
+    low: number;
+    medium: number;
+    high: number;
+    critical: number;
+  };
   top_risk_events: Array<{
     id: string;
     title: string;
     event_type: string;
     severity: string;
+    is_synthetic?: boolean;
+    asset_tag?: string | null;
     risk_score: number;
     risk_level: string;
     risk_breakdown: RiskBreakdown;
     occurred_at: string;
+  }>;
+  recent_detections?: Array<{
+    id: string;
+    title: string;
+    event_type: string;
+    source: string;
+    severity: string;
+    risk_score: number;
+    risk_level: string;
+    is_synthetic: boolean;
+    asset_id: string | null;
+    asset_tag: string | null;
+    source_ip: string | null;
+    detection_reasons: DetectionFindingReason[];
+    occurred_at: string;
+  }>;
+  recent_incidents?: Array<{
+    id: string;
+    incident_number: string;
+    title: string;
+    severity: string;
+    status: string;
+    risk_score: number;
+    risk_level: string;
+    assigned_to_id: string | null;
+    detected_at: string;
+    updated_at: string;
+  }>;
+  asset_risk_overview?: AssetRiskOverviewItem[];
+  detection_trend?: Array<{
+    bucket: string;
+    events: number;
+    detections: number;
   }>;
 }
 

@@ -1,14 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  BookOpenCheck,
   CheckCircle2,
   Clock,
+  Link2,
   MessageSquarePlus,
   Plus,
   RefreshCw,
   Search,
+  Server,
   ShieldAlert,
+  UserCheck,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -24,13 +34,24 @@ import { useAuth } from "@/features/auth/auth-context";
 import { formatTimestamp } from "@/lib/utils";
 import {
   addIncidentNoteApi,
+  assignIncidentApi,
   changeIncidentStatusApi,
   createIncidentApi,
+  linkIncidentEventsApi,
+  listAssetsApi,
   listIncidentsApi,
+  listPlaybooksApi,
   listSecurityEventsApi,
+  listUsersApi,
   resolveIncidentApi,
 } from "@/services/operational-service";
-import type { IncidentItem, SecurityEventItem } from "@/types/operational";
+import type {
+  AssetItem,
+  AuthUser,
+  IncidentItem,
+  PlaybookItem,
+  SecurityEventItem,
+} from "@/types/operational";
 
 export default function IncidentsPage() {
   const { user, isLoading: authLoading, showToast } = useAuth();
@@ -44,9 +65,14 @@ export default function IncidentsPage() {
 
   const [selectedIncident, setSelectedIncident] =
     useState<IncidentItem | null>(null);
-  const [availableEvents, setAvailableEvents] = useState<SecurityEventItem[]>(
-    []
-  );
+  const [allEvents, setAllEvents] = useState<SecurityEventItem[]>([]);
+  const [users, setUsers] = useState<AuthUser[]>([]);
+  const [assetsById, setAssetsById] = useState<Record<string, AssetItem>>({});
+  const [playbooks, setPlaybooks] = useState<PlaybookItem[]>([]);
+
+  // Assignment & Link Event controls
+  const [assigneeId, setAssigneeId] = useState("");
+  const [extraEventId, setExtraEventId] = useState("");
 
   // Create modal states
   const [createOpen, setCreateOpen] = useState(false);
@@ -70,20 +96,35 @@ export default function IncidentsPage() {
     }
     setIsLoading(true);
     try {
-      const resp = await listIncidentsApi({
-        page,
-        pageSize: 10,
-        search: search || undefined,
-        status: statusFilter || undefined,
-        severity: severityFilter || undefined,
-      });
+      const [resp, evResp, usersResp, assetsResp, pbResp] = await Promise.all([
+        listIncidentsApi({
+          page,
+          pageSize: 10,
+          search: search || undefined,
+          status: statusFilter || undefined,
+          severity: severityFilter || undefined,
+        }),
+        listSecurityEventsApi({ page: 1, pageSize: 100 }),
+        listUsersApi(),
+        listAssetsApi({ page: 1, pageSize: 50 }),
+        listPlaybooksApi(),
+      ]);
       setIncidents(resp.items);
       setTotal(resp.total);
+      setAllEvents(evResp.items);
+      setUsers(usersResp.items);
+      const assetMap: Record<string, AssetItem> = {};
+      for (const a of assetsResp.items) {
+        assetMap[a.id] = a;
+      }
+      setAssetsById(assetMap);
+      setPlaybooks(pbResp);
+
       setSelectedIncident((prev) => {
         if (!prev) {
           return resp.items[0] ?? null;
         }
-        return resp.items.find((i) => i.id === prev.id) ?? prev;
+        return resp.items.find((i) => i.id === prev.id) ?? resp.items[0] ?? null;
       });
     } catch (err) {
       showToast(
@@ -101,18 +142,121 @@ export default function IncidentsPage() {
     }
   }, [authLoading, loadIncidents]);
 
-  async function openCreateModal() {
+  useEffect(() => {
+    if (selectedIncident) {
+      setAssigneeId(selectedIncident.assigned_to_id ?? user?.id ?? "");
+    }
+  }, [selectedIncident, user]);
+
+  const usersById = useMemo(() => {
+    const map: Record<string, AuthUser> = {};
+    for (const u of users) {
+      map[u.id] = u;
+    }
+    return map;
+  }, [users]);
+
+  const eventsById = useMemo(() => {
+    const map: Record<string, SecurityEventItem> = {};
+    for (const e of allEvents) {
+      map[e.id] = e;
+    }
+    return map;
+  }, [allEvents]);
+
+  // Derive full SecurityEventItem records, Related Assets, Detection Findings, and Playbook for selectedIncident
+  const investigationContext = useMemo(() => {
+    if (!selectedIncident) {
+      return {
+        fullLinkedEvents: [] as SecurityEventItem[],
+        relatedAssets: [] as AssetItem[],
+        detectionFindings: [] as {
+          eventTitle: string;
+          rule_id: string;
+          rule_name: string;
+          mitre_technique: string;
+          confidence: number;
+          reason: string;
+          recommended_action: string;
+        }[],
+        matchedPlaybook: null as PlaybookItem | null,
+      };
+    }
+
+    const fullLinkedEvents: SecurityEventItem[] = [];
+    const assetSet = new Map<string, AssetItem>();
+    const detectionFindings: {
+      eventTitle: string;
+      rule_id: string;
+      rule_name: string;
+      mitre_technique: string;
+      confidence: number;
+      reason: string;
+      recommended_action: string;
+    }[] = [];
+
+    for (const le of selectedIncident.linked_events) {
+      const fullEv = eventsById[le.security_event_id];
+      if (fullEv) {
+        fullLinkedEvents.push(fullEv);
+        if (fullEv.asset_id && assetsById[fullEv.asset_id]) {
+          assetSet.set(fullEv.asset_id, assetsById[fullEv.asset_id]);
+        }
+        for (const r of fullEv.detection_reasons) {
+          detectionFindings.push({
+            eventTitle: fullEv.title,
+            rule_id: r.rule_id,
+            rule_name: r.rule_name,
+            mitre_technique: r.mitre_technique,
+            confidence: r.confidence,
+            reason: r.reason,
+            recommended_action: r.recommended_action,
+          });
+        }
+      }
+    }
+
+    // Match playbook by playbook_id or by dominant indicator type
+    let matchedPlaybook =
+      playbooks.find((pb) => pb.id === selectedIncident.playbook_id) ?? null;
+    if (!matchedPlaybook && playbooks.length > 0) {
+      const types = selectedIncident.linked_events.map(
+        (e) => e.event_type ?? ""
+      );
+      if (types.some((t) => t.includes("outbound") || t.includes("exfil"))) {
+        matchedPlaybook =
+          playbooks.find((pb) => pb.code === "PB-IR-003") ?? playbooks[0];
+      } else if (types.some((t) => t.includes("privilege"))) {
+        matchedPlaybook =
+          playbooks.find((pb) => pb.code === "PB-IR-004") ?? playbooks[0];
+      } else if (types.some((t) => t.includes("port_scan"))) {
+        matchedPlaybook =
+          playbooks.find((pb) => pb.code === "PB-IR-005") ?? playbooks[0];
+      } else if (types.some((t) => t.includes("suspicious_login"))) {
+        matchedPlaybook =
+          playbooks.find((pb) => pb.code === "PB-IR-001") ?? playbooks[0];
+      } else if (types.some((t) => t.includes("auth_failure"))) {
+        matchedPlaybook =
+          playbooks.find((pb) => pb.code === "PB-IR-002") ?? playbooks[0];
+      } else {
+        matchedPlaybook = playbooks[0];
+      }
+    }
+
+    return {
+      fullLinkedEvents,
+      relatedAssets: Array.from(assetSet.values()),
+      detectionFindings,
+      matchedPlaybook,
+    };
+  }, [selectedIncident, eventsById, assetsById, playbooks]);
+
+  function openCreateModal() {
     setNewTitle("");
     setNewSummary("");
     setNewSeverity("high");
     setSelectedEventIds([]);
     setCreateOpen(true);
-    try {
-      const evResp = await listSecurityEventsApi({ page: 1, pageSize: 20 });
-      setAvailableEvents(evResp.items);
-    } catch {
-      setAvailableEvents([]);
-    }
   }
 
   async function handleCreateIncident(e: FormEvent) {
@@ -157,6 +301,43 @@ export default function IncidentsPage() {
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : "Status update failed",
+        "error"
+      );
+    }
+  }
+
+  async function handleAssignAnalyst() {
+    if (!selectedIncident || !assigneeId) return;
+    try {
+      const updated = await assignIncidentApi(selectedIncident.id, assigneeId);
+      setSelectedIncident(updated);
+      const targetUser = usersById[assigneeId];
+      showToast(
+        `Incident ${updated.incident_number} assigned to ${targetUser ? `@${targetUser.username}` : "selected analyst"}.`,
+        "success"
+      );
+      await loadIncidents();
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to assign analyst",
+        "error"
+      );
+    }
+  }
+
+  async function handleLinkExtraEvent() {
+    if (!selectedIncident || !extraEventId) return;
+    try {
+      const updated = await linkIncidentEventsApi(selectedIncident.id, [
+        extraEventId,
+      ]);
+      setSelectedIncident(updated);
+      setExtraEventId("");
+      showToast("Security event linked to incident.", "success");
+      await loadIncidents();
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to link security event",
         "error"
       );
     }
@@ -214,6 +395,18 @@ export default function IncidentsPage() {
     );
   }
 
+  const assignedUser = selectedIncident?.assigned_to_id
+    ? usersById[selectedIncident.assigned_to_id]
+    : null;
+
+  const unlinkedEvents = useMemo(() => {
+    if (!selectedIncident) return [];
+    const linkedIds = new Set(
+      selectedIncident.linked_events.map((le) => le.security_event_id)
+    );
+    return allEvents.filter((ev) => !linkedIds.has(ev.id));
+  }, [selectedIncident, allEvents]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 border-b border-slate-800/80 pb-5 sm:flex-row sm:items-center sm:justify-between">
@@ -229,8 +422,9 @@ export default function IncidentsPage() {
               Incidents & Case Management
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Correlated security incident cases, risk scoring, lifecycle
-              transitions, and investigation timeline.
+              Correlated security incident cases, risk scoring, analyst
+              assignment, detection evidence, advisory response playbooks, and
+              chronological investigation timeline.
             </p>
           </div>
         </div>
@@ -238,7 +432,7 @@ export default function IncidentsPage() {
           {canWrite ? (
             <Button
               size="sm"
-              onClick={() => void openCreateModal()}
+              onClick={openCreateModal}
               data-testid="create-incident-btn"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -319,7 +513,8 @@ export default function IncidentsPage() {
           <CardHeader>
             <CardTitle>Incident Cases ({total})</CardTitle>
             <CardDescription>
-              Select an incident to manage lifecycle and timeline.
+              Select an incident to inspect evidence, assign analysts, consult
+              playbooks, and update timeline.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2.5 text-xs">
@@ -333,65 +528,80 @@ export default function IncidentsPage() {
                 cluster from the Security Events page.
               </p>
             ) : (
-              incidents.map((inc) => (
-                <div
-                  key={inc.id}
-                  onClick={() => setSelectedIncident(inc)}
-                  data-testid={`incident-card-${inc.incident_number}`}
-                  className={`cursor-pointer rounded-lg border p-3 transition-colors ${
-                    selectedIncident?.id === inc.id
-                      ? "border-emerald-500/50 bg-emerald-950/20"
-                      : "border-slate-800 bg-slate-950/60 hover:bg-slate-900"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-emerald-400">
-                      {inc.incident_number}
-                    </span>
-                    <Badge
-                      variant={
-                        inc.risk_level === "critical"
-                          ? "destructive"
-                          : inc.risk_level === "high"
-                          ? "warning"
-                          : "default"
-                      }
-                    >
-                      Risk {inc.risk_score}/100
-                    </Badge>
+              incidents.map((inc) => {
+                const assignee = inc.assigned_to_id
+                  ? usersById[inc.assigned_to_id]
+                  : null;
+                return (
+                  <div
+                    key={inc.id}
+                    onClick={() => setSelectedIncident(inc)}
+                    data-testid={`incident-card-${inc.incident_number}`}
+                    className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                      selectedIncident?.id === inc.id
+                        ? "border-emerald-500/50 bg-emerald-950/20"
+                        : "border-slate-800 bg-slate-950/60 hover:bg-slate-900"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-emerald-400">
+                        {inc.incident_number}
+                      </span>
+                      <Badge
+                        variant={
+                          inc.risk_level === "critical"
+                            ? "destructive"
+                            : inc.risk_level === "high"
+                            ? "warning"
+                            : "default"
+                        }
+                      >
+                        Risk {inc.risk_score}/100 ({inc.severity.toUpperCase()})
+                      </Badge>
+                    </div>
+                    <p className="mt-1 font-semibold text-slate-100">
+                      {inc.title}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-400">
+                      <span className="uppercase font-mono text-slate-300">
+                        Status: {inc.status}
+                      </span>
+                      <span>
+                        {assignee ? `@${assignee.username}` : "Unassigned"} •{" "}
+                        {inc.linked_events.length} event(s)
+                      </span>
+                    </div>
                   </div>
-                  <p className="mt-1 font-semibold text-slate-100">
-                    {inc.title}
-                  </p>
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                    <span className="uppercase font-mono text-slate-300">
-                      Status: {inc.status}
-                    </span>
-                    <span>{inc.linked_events.length} linked event(s)</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </CardContent>
         </Card>
 
         {/* Incident Investigation & Timeline Workspace */}
-        <Card className="lg:col-span-3">
+        <Card className="lg:col-span-3" data-testid="incident-workspace-panel">
           <CardHeader>
             <CardTitle>Incident Investigation & Timeline</CardTitle>
             <CardDescription>
-              Lifecycle status controls, linked indicators, root-cause
-              resolution, and chronological audit timeline.
+              End-to-end investigation workspace: risk breakdown, analyst
+              assignment, related assets, detection findings, correlation
+              evidence, advisory response playbook, and timeline.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-xs">
             {selectedIncident ? (
               <div className="space-y-5">
-                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-2">
+                {/* 1. Incident Summary, Severity, Status & Risk Breakdown */}
+                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono text-sm font-bold text-emerald-400">
-                      {selectedIncident.incident_number}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-bold text-emerald-400">
+                        {selectedIncident.incident_number}
+                      </span>
+                      <Badge variant="default" className="uppercase">
+                        Severity: {selectedIncident.severity}
+                      </Badge>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="uppercase">
                         {selectedIncident.status}
@@ -408,91 +618,375 @@ export default function IncidentsPage() {
                       </Badge>
                     </div>
                   </div>
+
                   <h3 className="text-base font-bold text-slate-100">
                     {selectedIncident.title}
                   </h3>
                   {selectedIncident.summary ? (
-                    <p className="text-slate-300">{selectedIncident.summary}</p>
-                  ) : null}
-                  {selectedIncident.correlation_explanation ? (
-                    <p className="rounded border border-emerald-500/20 bg-emerald-950/15 p-2 text-[11px] text-emerald-200">
-                      <strong>Correlation Context:</strong>{" "}
-                      {selectedIncident.correlation_explanation}
+                    <p className="text-slate-300 leading-relaxed">
+                      {selectedIncident.summary}
                     </p>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 gap-2 border-t border-slate-800/80 pt-2 text-[11px] text-slate-400 sm:grid-cols-2">
+                    <div>
+                      Detected:{" "}
+                      <span className="font-mono text-slate-200">
+                        {formatTimestamp(selectedIncident.detected_at)}
+                      </span>
+                    </div>
+                    <div>
+                      Resolved:{" "}
+                      <span className="font-mono text-slate-200">
+                        {selectedIncident.resolved_at
+                          ? formatTimestamp(selectedIncident.resolved_at)
+                          : "Active / Unresolved"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedIncident.root_cause_notes ? (
+                    <div className="rounded border border-emerald-500/30 bg-emerald-950/20 p-2.5 text-[11px] text-emerald-200">
+                      <strong>Recorded Root Cause / Resolution Summary:</strong>{" "}
+                      {selectedIncident.root_cause_notes}
+                    </div>
+                  ) : null}
+
+                  {selectedIncident.correlation_explanation ? (
+                    <div className="rounded border border-emerald-500/20 bg-emerald-950/15 p-2.5 text-[11px] text-emerald-200">
+                      <strong>Correlation Evidence:</strong>{" "}
+                      {selectedIncident.correlation_explanation}
+                    </div>
+                  ) : null}
+
+                  {/* Risk Breakdown Factors */}
+                  {selectedIncident.risk_breakdown?.factors ? (
+                    <div className="rounded border border-slate-800 bg-slate-900/50 p-2.5 space-y-1">
+                      <p className="font-semibold text-slate-200">
+                        Incident Risk Score Breakdown (
+                        {selectedIncident.risk_score}/100)
+                      </p>
+                      <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 text-[11px]">
+                        {selectedIncident.risk_breakdown.factors.map(
+                          (f, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between rounded bg-slate-950/70 px-2 py-1"
+                            >
+                              <span className="text-slate-300">{f.factor}</span>
+                              <span className="font-mono text-emerald-400">
+                                +{f.points}/{f.weight_max}
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
                   ) : null}
                 </div>
 
-                {/* Status Transitions */}
-                {canWrite ? (
-                  <div className="space-y-2">
-                    <p className="font-semibold text-slate-300">
-                      Transition Incident Status:
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(
-                        [
-                          "open",
-                          "investigating",
-                          "containment",
-                          "eradication",
-                          "recovered",
-                          "closed",
-                        ] as const
-                      ).map((st) => (
-                        <Button
-                          key={st}
-                          size="sm"
-                          variant={
-                            selectedIncident.status === st
-                              ? "default"
-                              : "outline"
-                          }
-                          data-testid={`incident-status-btn-${st}`}
-                          onClick={() => void handleStatusTransition(st)}
-                        >
-                          {st.toUpperCase()}
-                        </Button>
-                      ))}
+                {/* 2. Assigned Analyst & Lifecycle Status Transitions */}
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <span className="flex items-center gap-1.5 font-semibold text-slate-200">
+                        <UserCheck className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>Assigned Analyst</span>
+                      </span>
+                      <Badge
+                        variant="default"
+                        data-testid="incident-assignee-badge"
+                      >
+                        {assignedUser
+                          ? `${assignedUser.full_name} (@${assignedUser.username})`
+                          : "Unassigned"}
+                      </Badge>
                     </div>
+                    {canWrite ? (
+                      <div className="flex items-center gap-2 pt-1">
+                        <select
+                          data-testid="incident-assign-select"
+                          value={assigneeId}
+                          onChange={(e) => setAssigneeId(e.target.value)}
+                          className="min-w-0 flex-1 truncate rounded border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-slate-100"
+                        >
+                          <option value="">Select analyst...</option>
+                          {users.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.full_name} (@{u.username} — {u.role})
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleAssignAnalyst()}
+                          disabled={!assigneeId}
+                          data-testid="incident-assign-submit"
+                          className="shrink-0"
+                        >
+                          Assign
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
 
-                {/* Linked Events */}
-                <div>
-                  <p className="font-semibold text-slate-300">
-                    Correlated Security Events (
-                    {selectedIncident.linked_events.length})
-                  </p>
+                  {canWrite ? (
+                    <div className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+                      <p className="font-semibold text-slate-200">
+                        Transition Incident Status:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(
+                          [
+                            "open",
+                            "investigating",
+                            "containment",
+                            "eradication",
+                            "recovered",
+                            "closed",
+                          ] as const
+                        ).map((st) => (
+                          <Button
+                            key={st}
+                            size="sm"
+                            variant={
+                              selectedIncident.status === st
+                                ? "default"
+                                : "outline"
+                            }
+                            data-testid={`incident-status-btn-${st}`}
+                            onClick={() => void handleStatusTransition(st)}
+                          >
+                            {st.toUpperCase()}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* 3. Related Assets & Detection Findings */}
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div
+                    data-testid="incident-related-assets"
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2"
+                  >
+                    <p className="flex items-center gap-1.5 font-semibold text-slate-200">
+                      <Server className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>
+                        Affected Assets (
+                        {investigationContext.relatedAssets.length})
+                      </span>
+                    </p>
+                    {investigationContext.relatedAssets.length === 0 ? (
+                      <p className="text-slate-400">
+                        No registered assets directly mapped to linked events.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {investigationContext.relatedAssets.map((asset) => (
+                          <div
+                            key={asset.id}
+                            className="flex items-center justify-between rounded border border-slate-800 bg-slate-900/60 px-2.5 py-1.5"
+                          >
+                            <div>
+                              <p className="font-mono font-bold text-emerald-400">
+                                {asset.asset_tag} — {asset.name}
+                              </p>
+                              <p className="text-[11px] text-slate-400">
+                                {asset.asset_type} • {asset.environment} • IP:{" "}
+                                {asset.ip_address ?? "—"}
+                              </p>
+                            </div>
+                            <Badge
+                              variant={
+                                asset.criticality === "critical"
+                                  ? "destructive"
+                                  : "warning"
+                              }
+                            >
+                              {asset.criticality.toUpperCase()}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    data-testid="incident-detection-findings"
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2"
+                  >
+                    <p className="flex items-center gap-1.5 font-semibold text-slate-200">
+                      <ShieldAlert className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>
+                        Detection Findings (
+                        {investigationContext.detectionFindings.length})
+                      </span>
+                    </p>
+                    {investigationContext.detectionFindings.length === 0 ? (
+                      <p className="text-slate-400">
+                        No rule-based detection findings recorded on linked
+                        events.
+                      </p>
+                    ) : (
+                      <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                        {investigationContext.detectionFindings.map(
+                          (df, idx) => (
+                            <div
+                              key={idx}
+                              className="rounded border border-emerald-500/25 bg-emerald-950/15 p-2 space-y-0.5"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono font-bold text-emerald-300">
+                                  {df.rule_id} • {df.mitre_technique}
+                                </span>
+                                <span className="font-mono text-[10px] text-slate-300">
+                                  Conf {Math.round(df.confidence * 100)}%
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-200">
+                                {df.reason}
+                              </p>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. Linked Security Events + Link Additional Event */}
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-slate-200">
+                      Correlated Security Events (
+                      {selectedIncident.linked_events.length})
+                    </p>
+                    {canWrite && unlinkedEvents.length > 0 ? (
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          data-testid="incident-link-event-select"
+                          value={extraEventId}
+                          onChange={(e) => setExtraEventId(e.target.value)}
+                          className="max-w-56 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100"
+                        >
+                          <option value="">
+                            + Link additional security event...
+                          </option>
+                          {unlinkedEvents.map((ev) => (
+                            <option key={ev.id} value={ev.id}>
+                              [{ev.severity.toUpperCase()}] {ev.title}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!extraEventId}
+                          onClick={() => void handleLinkExtraEvent()}
+                          data-testid="incident-link-event-submit"
+                        >
+                          <Link2 className="h-3 w-3" />
+                          <span>Link</span>
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+
                   {selectedIncident.linked_events.length === 0 ? (
-                    <p className="mt-1 text-slate-400">
+                    <p className="text-slate-400">
                       No events linked to this incident yet.
                     </p>
                   ) : (
-                    <div className="mt-2 space-y-1.5">
-                      {selectedIncident.linked_events.map((le) => (
-                        <div
-                          key={le.id}
-                          className="flex items-center justify-between rounded border border-slate-800 bg-slate-950/60 px-3 py-2"
-                        >
-                          <div>
-                            <p className="font-medium text-slate-200">
-                              {le.event_title ?? le.security_event_id}
-                            </p>
-                            <p className="font-mono text-[11px] text-slate-400">
-                              {le.event_type} • Source IP:{" "}
-                              {le.source_ip ?? "—"}
-                            </p>
+                    <div className="space-y-1.5">
+                      {selectedIncident.linked_events.map((le) => {
+                        const fullEv = eventsById[le.security_event_id];
+                        const asset =
+                          fullEv?.asset_id && assetsById[fullEv.asset_id]
+                            ? assetsById[fullEv.asset_id]
+                            : null;
+                        return (
+                          <div
+                            key={le.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-800 bg-slate-900/50 px-3 py-2"
+                          >
+                            <div>
+                              <p className="font-medium text-slate-200">
+                                {le.event_title ?? le.security_event_id}
+                              </p>
+                              <p className="font-mono text-[11px] text-slate-400">
+                                {le.event_type} • Source IP:{" "}
+                                {le.source_ip ?? "—"}
+                                {asset ? ` • Asset: ${asset.asset_tag}` : ""}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {fullEv ? (
+                                <Badge variant="default">
+                                  Risk {fullEv.risk_score}/100
+                                </Badge>
+                              ) : null}
+                              <Badge variant="secondary">
+                                {le.correlation_role}
+                              </Badge>
+                            </div>
                           </div>
-                          <Badge variant="secondary">
-                            {le.correlation_role}
-                          </Badge>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
 
-                {/* Add Note & Resolve Incident Forms */}
+                {/* 5. Relevant Defensive Response Playbook */}
+                {investigationContext.matchedPlaybook ? (
+                  <div
+                    data-testid="incident-playbook-guidance"
+                    className="rounded-lg border border-emerald-500/30 bg-emerald-950/15 p-3.5 space-y-2.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 font-semibold text-emerald-300">
+                        <BookOpenCheck className="h-4 w-4" />
+                        <span>
+                          Recommended Playbook:{" "}
+                          {investigationContext.matchedPlaybook.code} —{" "}
+                          {investigationContext.matchedPlaybook.name}
+                        </span>
+                      </span>
+                      <Badge variant="secondary">
+                        Advisory Only — Human Verified
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      {investigationContext.matchedPlaybook.description}
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {investigationContext.matchedPlaybook.steps_json.map(
+                        (st) => (
+                          <div
+                            key={st.step_number}
+                            className="rounded border border-slate-800 bg-slate-950/80 p-2.5 space-y-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-emerald-300">
+                                Step {st.step_number}: {st.title}
+                              </span>
+                              <span className="font-mono text-[10px] uppercase text-slate-400">
+                                {st.phase}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-300">
+                              {st.instruction}
+                            </p>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* 6. Add Note & Resolve Incident Forms */}
                 {canWrite ? (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <form
@@ -550,13 +1044,13 @@ export default function IncidentsPage() {
                   </div>
                 ) : null}
 
-                {/* Chronological Timeline */}
+                {/* 7. Chronological Timeline */}
                 <div>
                   <p className="flex items-center gap-1.5 font-semibold text-slate-200">
                     <Clock className="h-3.5 w-3.5 text-emerald-400" />
                     <span>
-                      Incident Timeline ({selectedIncident.timeline_json.length}
-                      )
+                      Chronological Investigation Timeline (
+                      {selectedIncident.timeline_json.length})
                     </span>
                   </p>
                   <div
@@ -665,13 +1159,13 @@ export default function IncidentsPage() {
                 />
               </div>
 
-              {availableEvents.length > 0 ? (
+              {allEvents.length > 0 ? (
                 <div>
                   <label className="block font-medium text-slate-300">
                     Link Security Events (Optional)
                   </label>
                   <div className="mt-1 max-h-36 space-y-1 overflow-y-auto rounded border border-slate-800 bg-slate-950 p-2">
-                    {availableEvents.map((ev) => (
+                    {allEvents.map((ev) => (
                       <label
                         key={ev.id}
                         className="flex items-center gap-2 text-[11px] text-slate-300"

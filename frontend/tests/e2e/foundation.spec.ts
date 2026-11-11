@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
-  test("1. Dashboard Health, Metrics, Login Modal & RBAC Role Switching (Admin <-> Viewer)", async ({
+test.describe("SATRIA SENTINEL — Phase 3 Command Center & Operational Workflow E2E Suite", () => {
+  test("1. Dashboard Health, Priority Attention Queue, Asset Risk Overview & RBAC Role Switching", async ({
     page,
   }) => {
     await page.goto("/");
@@ -26,6 +26,11 @@ test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
       { timeout: 10000 }
     );
     await expect(page.getByTestId("active-role-badge")).toContainText("admin");
+
+    // Verify Phase 3 Dashboard Intelligence panels
+    await expect(page.getByTestId("analyst-priority-section")).toBeVisible();
+    await expect(page.getByTestId("asset-risk-overview")).toBeVisible();
+    await expect(page.getByTestId("recent-incidents-panel")).toBeVisible();
 
     // Switch role to Viewer via Login Modal
     await page.getByTestId("open-login-modal-btn").click();
@@ -104,7 +109,7 @@ test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
     await expect(escalateBtn).toBeVisible({ timeout: 10000 });
     await escalateBtn.click();
 
-    // D. Investigate, Transition Status, Add Note, and Resolve Incident on /incidents
+    // D. Investigate, Assign Analyst, Transition Status, Add Note, and Resolve Incident on /incidents
     await page.getByTestId("nav-link-incidents").click();
     await expect(page.getByTestId("page-heading")).toContainText("Incidents");
     const firstIncidentCard = page
@@ -112,6 +117,15 @@ test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
       .first();
     await expect(firstIncidentCard).toBeVisible({ timeout: 10000 });
     await firstIncidentCard.click();
+
+    // Assign analyst
+    await expect(page.getByTestId("incident-assign-submit")).toBeVisible();
+    await page.getByTestId("incident-assign-submit").click();
+
+    // Verify related assets, detection findings, and playbook guidance panels
+    await expect(page.getByTestId("incident-related-assets")).toBeVisible();
+    await expect(page.getByTestId("incident-detection-findings")).toBeVisible();
+    await expect(page.getByTestId("incident-playbook-guidance")).toBeVisible();
 
     // Transition status to containment
     await page.getByTestId("incident-status-btn-containment").click();
@@ -155,7 +169,8 @@ test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
       { timeout: 10000 }
     );
 
-    // Recommend playbook for brute_force
+    // Verify advisory warning & recommend playbook for brute_force
+    await expect(page.getByTestId("playbook-advisory-warning")).toBeVisible();
     await page
       .getByTestId("playbook-recommend-select")
       .selectOption("brute_force");
@@ -164,7 +179,7 @@ test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
       timeout: 10000,
     });
 
-    // Verify Audit Logs page shows recorded operational actions
+    // Verify Audit Logs page shows recorded operational actions & actor resolution
     await page.getByTestId("nav-link-audit-logs").click();
     await expect(page.getByTestId("page-heading")).toContainText("Audit Logs");
     await expect(page.getByTestId("audit-logs-table")).toContainText(
@@ -210,5 +225,64 @@ test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
         route.heading
       );
     }
+  });
+
+  test("4. Complete 14-Step Repeatable Demonstration Scenario & Zero Console/Page Errors", async ({
+    page,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => {
+      pageErrors.push(err.message);
+    });
+
+    // Step 1 & 2: Log in as security_analyst and view Command Center Dashboard
+    await page.goto("/");
+    await expect(page.getByTestId("active-user-indicator")).toBeVisible({
+      timeout: 10000,
+    });
+    await page.getByTestId("open-login-modal-btn").click();
+    await page.getByTestId("preset-analyst-btn").click();
+    await page.getByTestId("login-submit-btn").click();
+    await expect(page.getByTestId("active-user-indicator")).toContainText(
+      "analyst",
+      { timeout: 10000 }
+    );
+    await expect(page.getByTestId("analyst-priority-section")).toBeVisible();
+
+    // Step 3: Inspect monitored assets & criticality context
+    await page.getByTestId("nav-link-assets").click();
+    await expect(page.getByTestId("asset-detail-inspector")).toContainText(
+      "Why It Matters",
+      { timeout: 10000 }
+    );
+
+    // Step 4, 5, 6, 7: Generate synthetic events, review detections, review correlation, inspect risk score
+    await page.getByTestId("nav-link-security-events").click();
+    await page
+      .getByTestId("synthetic-scenario-select")
+      .selectOption("privilege_escalation");
+    await page.getByTestId("generate-scenario-btn").click();
+    await expect(page.getByTestId("event-explanation-panel")).toContainText(
+      "Risk Score Calculation",
+      { timeout: 10000 }
+    );
+
+    // Step 8, 9, 10, 11, 12, 13: Open incident, inspect evidence, assign analyst, add note, consult playbook, resolve incident
+    await page.getByTestId("nav-link-incidents").click();
+    await expect(page.getByTestId("incident-workspace-panel")).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByTestId("incident-playbook-guidance")).toContainText(
+      "Recommended Playbook:"
+    );
+
+    // Step 14: Verify action in Audit Logs
+    await page.getByTestId("nav-link-audit-logs").click();
+    await expect(page.getByTestId("audit-logs-table")).toContainText(
+      "@analyst",
+      { timeout: 10000 }
+    );
+
+    expect(pageErrors).toEqual([]);
   });
 });

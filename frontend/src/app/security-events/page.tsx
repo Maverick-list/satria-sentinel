@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import {
   Activity,
   FileUp,
   GitMerge,
   RefreshCw,
   Search,
+  Server,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
@@ -26,12 +34,14 @@ import {
   generateSyntheticTelemetryApi,
   getCorrelationsApi,
   importSecurityLogsApi,
+  listAssetsApi,
   listSecurityEventsApi,
   runCorrelationsApi,
   runDetectionScanApi,
   updateSecurityEventStatusApi,
 } from "@/services/operational-service";
 import type {
+  AssetItem,
   CorrelationCluster,
   LogImportSummary,
   SecurityEventItem,
@@ -65,11 +75,15 @@ const SAMPLE_JSON_TEMPLATE = JSON.stringify(
 export default function SecurityEventsPage() {
   const { user, isLoading: authLoading, showToast } = useAuth();
   const [events, setEvents] = useState<SecurityEventItem[]>([]);
+  const [assetsById, setAssetsById] = useState<Record<string, AssetItem>>({});
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [detectionFilter, setDetectionFilter] = useState<
+    "all" | "flagged" | "unflagged"
+  >("all");
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedEvent, setSelectedEvent] = useState<SecurityEventItem | null>(
@@ -97,7 +111,7 @@ export default function SecurityEventsPage() {
     }
     setIsLoading(true);
     try {
-      const [evResp, corrResp] = await Promise.all([
+      const [evResp, corrResp, assetsResp] = await Promise.all([
         listSecurityEventsApi({
           page,
           pageSize: 12,
@@ -106,10 +120,26 @@ export default function SecurityEventsPage() {
           status: statusFilter || undefined,
         }),
         getCorrelationsApi(60),
+        listAssetsApi({ page: 1, pageSize: 50 }),
       ]);
+      const assetMap: Record<string, AssetItem> = {};
+      for (const a of assetsResp.items) {
+        assetMap[a.id] = a;
+      }
+      setAssetsById(assetMap);
       setEvents(evResp.items);
       setTotal(evResp.total);
       setClusters(corrResp.clusters);
+      setSelectedEvent((prev) => {
+        if (!prev) {
+          return evResp.items[0] ?? null;
+        }
+        return (
+          evResp.items.find((e) => e.id === prev.id) ??
+          evResp.items[0] ??
+          null
+        );
+      });
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : "Failed to load security events",
@@ -125,6 +155,16 @@ export default function SecurityEventsPage() {
       void loadData();
     }
   }, [authLoading, loadData]);
+
+  const filteredEvents = useMemo(() => {
+    if (detectionFilter === "flagged") {
+      return events.filter((e) => e.detection_reasons.length > 0);
+    }
+    if (detectionFilter === "unflagged") {
+      return events.filter((e) => e.detection_reasons.length === 0);
+    }
+    return events;
+  }, [events, detectionFilter]);
 
   async function handleGenerateScenario() {
     setIsProcessing(true);
@@ -221,15 +261,17 @@ export default function SecurityEventsPage() {
 
   async function handleEscalateCluster(cluster: CorrelationCluster) {
     try {
+      const progressionPreview = cluster.event_progression.slice(0, 4).join(" -> ");
+      const rawTitle = `Escalated Cluster ${cluster.correlation_group_id} (${progressionPreview})`;
       const inc = await createIncidentApi({
-        title: `Escalated Cluster ${cluster.correlation_group_id} (${cluster.event_progression.join(" -> ")})`,
+        title: rawTitle.slice(0, 240),
         summary: `Escalated from correlated synthetic telemetry cluster (${cluster.events_count} events).`,
         severity:
           cluster.highest_severity === "informational"
             ? "low"
             : cluster.highest_severity,
-        security_event_ids: cluster.events.map((e) => e.id),
-        correlation_explanation: cluster.correlation_explanation,
+        security_event_ids: cluster.events.slice(-15).map((e) => e.id),
+        correlation_explanation: cluster.correlation_explanation.slice(0, 1900),
       });
       showToast(
         `Incident ${inc.incident_number} created from cluster ${cluster.correlation_group_id}.`,
@@ -243,6 +285,10 @@ export default function SecurityEventsPage() {
       );
     }
   }
+
+  const selectedEventAsset = selectedEvent?.asset_id
+    ? assetsById[selectedEvent.asset_id]
+    : undefined;
 
   return (
     <div className="space-y-6">
@@ -460,7 +506,7 @@ export default function SecurityEventsPage() {
       {/* Filter Bar */}
       <Card>
         <CardContent className="pt-5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
             <div className="relative sm:col-span-2">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
               <input
@@ -483,6 +529,7 @@ export default function SecurityEventsPage() {
                 setPage(1);
               }}
               aria-label="Filter by Severity"
+              data-testid="event-severity-filter"
               className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100"
             >
               <option value="">All Severities</option>
@@ -493,15 +540,32 @@ export default function SecurityEventsPage() {
             </select>
 
             <select
+              value={detectionFilter}
+              onChange={(e) =>
+                setDetectionFilter(
+                  e.target.value as "all" | "flagged" | "unflagged"
+                )
+              }
+              aria-label="Filter by Detection Status"
+              data-testid="event-detection-filter"
+              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100"
+            >
+              <option value="all">All Detection States</option>
+              <option value="flagged">Flagged by Rules Only</option>
+              <option value="unflagged">Unflagged Only</option>
+            </select>
+
+            <select
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value);
                 setPage(1);
               }}
               aria-label="Filter by Triage Status"
+              data-testid="event-status-filter"
               className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100"
             >
-              <option value="">All Statuses</option>
+              <option value="">All Triage Statuses</option>
               <option value="new">New</option>
               <option value="triaged">Triaged</option>
               <option value="linked">Linked</option>
@@ -517,8 +581,8 @@ export default function SecurityEventsPage() {
           <CardHeader>
             <CardTitle>Security Events Queue ({total})</CardTitle>
             <CardDescription>
-              Click any event to inspect matched detection rule reasons and
-              0–100 risk score calculation.
+              Click any event to inspect matched detection rule reasons, asset
+              context, supporting telemetry evidence, and 0–100 risk calculation.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -526,9 +590,9 @@ export default function SecurityEventsPage() {
               <p className="py-8 text-center text-xs text-slate-400">
                 Loading security events...
               </p>
-            ) : events.length === 0 ? (
+            ) : filteredEvents.length === 0 ? (
               <p className="py-8 text-center text-xs text-slate-400">
-                No security events found. Use the generator or importer above.
+                No security events match the current filters.
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -538,64 +602,102 @@ export default function SecurityEventsPage() {
                 >
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400">
-                      <th className="pb-2.5 pr-3">Event Title</th>
+                      <th className="pb-2.5 pr-3">Event & Origin</th>
+                      <th className="pb-2.5 pr-3">Target Asset</th>
                       <th className="pb-2.5 pr-3">Type / Source IP</th>
-                      <th className="pb-2.5 pr-3">Risk (0-100)</th>
-                      <th className="pb-2.5 pr-3">Rules Matched</th>
+                      <th className="pb-2.5 pr-3">Severity / Risk</th>
+                      <th className="pb-2.5 pr-3">Detection Status</th>
                       <th className="pb-2.5">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/70">
-                    {events.map((ev) => (
-                      <tr
-                        key={ev.id}
-                        onClick={() => setSelectedEvent(ev)}
-                        className="cursor-pointer hover:bg-slate-900/60"
-                      >
-                        <td className="py-2.5 pr-3 font-medium text-slate-100">
-                          <div className="flex items-center gap-1.5">
-                            {ev.is_synthetic ? (
+                    {filteredEvents.map((ev) => {
+                      const asset = ev.asset_id
+                        ? assetsById[ev.asset_id]
+                        : undefined;
+                      const isSelected = selectedEvent?.id === ev.id;
+                      return (
+                        <tr
+                          key={ev.id}
+                          onClick={() => setSelectedEvent(ev)}
+                          className={`cursor-pointer transition-colors ${
+                            isSelected
+                              ? "bg-emerald-950/25"
+                              : "hover:bg-slate-900/60"
+                          }`}
+                        >
+                          <td className="py-2.5 pr-3 font-medium text-slate-100">
+                            <div className="flex items-center gap-1.5">
+                              {ev.is_synthetic ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] font-mono"
+                                >
+                                  SYNTHETIC SIM
+                                </Badge>
+                              ) : null}
+                              <span>{ev.title}</span>
+                            </div>
+                            <div className="mt-0.5 font-mono text-[10px] text-slate-500">
+                              Sensor: {ev.source} •{" "}
+                              {formatTimestamp(ev.occurred_at)}
+                            </div>
+                          </td>
+                          <td className="py-2.5 pr-3 font-mono text-[11px]">
+                            {asset ? (
+                              <div>
+                                <span className="font-semibold text-emerald-400">
+                                  {asset.asset_tag}
+                                </span>
+                                <div className="text-[10px] text-slate-400 truncate max-w-28">
+                                  {asset.name}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500">Unmapped</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-3 font-mono text-slate-300">
+                            <div>{ev.event_type}</div>
+                            <div className="text-[11px] text-slate-500">
+                              {ev.source_ip ?? "—"}
+                            </div>
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <div className="flex flex-col items-start gap-1">
                               <Badge
-                                variant="secondary"
-                                className="text-[10px] font-mono"
+                                variant={
+                                  ev.risk_level === "critical"
+                                    ? "destructive"
+                                    : ev.risk_level === "high"
+                                    ? "warning"
+                                    : "default"
+                                }
                               >
-                                SIM
+                                {ev.risk_score}/100 ({ev.risk_level})
                               </Badge>
-                            ) : null}
-                            <span>{ev.title}</span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 pr-3 font-mono text-slate-300">
-                          <div>{ev.event_type}</div>
-                          <div className="text-[11px] text-slate-500">
-                            {ev.source_ip ?? "—"}
-                          </div>
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <Badge
-                            variant={
-                              ev.risk_level === "critical"
-                                ? "destructive"
-                                : ev.risk_level === "high"
-                                ? "warning"
-                                : "default"
-                            }
-                          >
-                            {ev.risk_score} ({ev.risk_level})
-                          </Badge>
-                        </td>
-                        <td className="py-2.5 pr-3 font-mono text-emerald-400">
-                          {ev.detection_reasons.length > 0
-                            ? ev.detection_reasons
-                                .map((r) => r.rule_id)
-                                .join(", ")
-                            : "None"}
-                        </td>
-                        <td className="py-2.5 uppercase text-slate-300">
-                          {ev.status}
-                        </td>
-                      </tr>
-                    ))}
+                              <span className="font-mono text-[10px] uppercase text-slate-400">
+                                Sev: {ev.severity}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 pr-3 font-mono text-emerald-400">
+                            {ev.detection_reasons.length > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-950/30 px-1.5 py-0.5 text-[10px]">
+                                {ev.detection_reasons
+                                  .map((r) => r.rule_id)
+                                  .join(", ")}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">None</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 uppercase font-mono text-[11px] text-slate-300">
+                            {ev.status}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -628,36 +730,82 @@ export default function SecurityEventsPage() {
         </Card>
 
         {/* Explainable Detection & Risk Inspector */}
-        <Card>
+        <Card data-testid="event-explanation-panel">
           <CardHeader>
             <CardTitle>Detection & Risk Explanation</CardTitle>
             <CardDescription>
-              Rule match reasoning, MITRE mapping, and 0–100 score breakdown.
+              What happened, why it was flagged, supporting telemetry evidence,
+              asset context, and 0–100 score calculation.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-xs">
             {selectedEvent ? (
               <div className="space-y-4">
-                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                  <div className="flex items-center justify-between">
-                    <Badge variant="default">{selectedEvent.event_type}</Badge>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="default">
+                        {selectedEvent.event_type}
+                      </Badge>
+                      {selectedEvent.is_synthetic ? (
+                        <Badge variant="secondary" className="font-mono">
+                          SYNTHETIC SIM
+                        </Badge>
+                      ) : null}
+                    </div>
                     <span className="font-mono text-[11px] text-slate-400">
                       {formatTimestamp(selectedEvent.occurred_at)}
                     </span>
                   </div>
-                  <p className="mt-2 font-semibold text-slate-100">
+                  <p className="font-semibold text-slate-100">
                     {selectedEvent.title}
                   </p>
                   {selectedEvent.description ? (
-                    <p className="mt-1 text-slate-400">
+                    <p className="text-slate-400 leading-relaxed">
                       {selectedEvent.description}
                     </p>
                   ) : null}
                   {selectedEvent.correlation_group_id ? (
-                    <p className="mt-2 font-mono text-[11px] text-emerald-400">
+                    <p className="font-mono text-[11px] text-emerald-400">
                       Correlation Cluster: {selectedEvent.correlation_group_id}
                     </p>
                   ) : null}
+                </div>
+
+                {/* Related Asset Context */}
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                  <p className="flex items-center gap-1.5 font-semibold text-slate-200">
+                    <Server className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Related Asset Context</span>
+                  </p>
+                  {selectedEventAsset ? (
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <div>
+                        <p className="font-mono font-bold text-emerald-400">
+                          {selectedEventAsset.asset_tag} —{" "}
+                          {selectedEventAsset.name}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          Type: {selectedEventAsset.asset_type} • Env:{" "}
+                          {selectedEventAsset.environment} • IP:{" "}
+                          {selectedEventAsset.ip_address ?? "—"}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={
+                          selectedEventAsset.criticality === "critical"
+                            ? "destructive"
+                            : "warning"
+                        }
+                      >
+                        {selectedEventAsset.criticality.toUpperCase()}
+                      </Badge>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-slate-400">
+                      No registered asset directly mapped to this event.
+                    </p>
+                  )}
                 </div>
 
                 {canWrite ? (
@@ -678,6 +826,55 @@ export default function SecurityEventsPage() {
                     ))}
                   </div>
                 ) : null}
+
+                {/* Supporting Telemetry Evidence */}
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-1.5">
+                  <p className="font-semibold text-slate-200">
+                    Supporting Telemetry Evidence
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                    <div className="rounded border border-slate-800/80 bg-slate-900/50 p-1.5">
+                      <span className="text-slate-500">Source IP: </span>
+                      <span className="text-slate-200">
+                        {selectedEvent.source_ip ?? "—"}
+                      </span>
+                    </div>
+                    <div className="rounded border border-slate-800/80 bg-slate-900/50 p-1.5">
+                      <span className="text-slate-500">Dest IP: </span>
+                      <span className="text-slate-200">
+                        {selectedEvent.destination_ip ?? "—"}
+                      </span>
+                    </div>
+                    <div className="rounded border border-slate-800/80 bg-slate-900/50 p-1.5">
+                      <span className="text-slate-500">Sensor: </span>
+                      <span className="text-slate-200">
+                        {selectedEvent.source}
+                      </span>
+                    </div>
+                    <div className="rounded border border-slate-800/80 bg-slate-900/50 p-1.5">
+                      <span className="text-slate-500">MITRE: </span>
+                      <span className="text-emerald-300">
+                        {selectedEvent.mitre_technique ?? "N/A"}
+                      </span>
+                    </div>
+                  </div>
+                  {Object.keys(selectedEvent.raw_payload || {}).length > 0 ? (
+                    <div className="mt-1.5 rounded border border-slate-800 bg-slate-950 p-2 font-mono text-[10px] text-slate-300">
+                      {Object.entries(selectedEvent.raw_payload).map(
+                        ([k, v]) => (
+                          <div key={k} className="flex justify-between py-0.5">
+                            <span className="text-slate-500">{k}:</span>
+                            <span className="text-emerald-300">
+                              {typeof v === "object"
+                                ? JSON.stringify(v)
+                                : String(v)}
+                            </span>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  ) : null}
+                </div>
 
                 {/* Detection Rule Reasons */}
                 <div>
@@ -735,13 +932,18 @@ export default function SecurityEventsPage() {
                     {selectedEvent.risk_breakdown?.explanation}
                   </p>
                   {selectedEvent.risk_breakdown?.factors ? (
-                    <ul className="space-y-1 border-t border-slate-800 pt-2 text-[11px] text-slate-300">
+                    <ul className="space-y-1.5 border-t border-slate-800 pt-2 text-[11px] text-slate-300">
                       {selectedEvent.risk_breakdown.factors.map((f, idx) => (
-                        <li key={idx} className="flex justify-between">
-                          <span>{f.factor}</span>
-                          <span className="font-mono text-emerald-400">
-                            +{f.points}/{f.weight_max}
-                          </span>
+                        <li key={idx} className="space-y-0.5">
+                          <div className="flex justify-between">
+                            <span>{f.factor}</span>
+                            <span className="font-mono text-emerald-400">
+                              +{f.points}/{f.weight_max}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500">
+                            {f.detail}
+                          </p>
                         </li>
                       ))}
                     </ul>

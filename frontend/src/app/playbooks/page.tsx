@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BookOpenCheck, CheckSquare, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpenCheck,
+  CheckSquare,
+  ShieldCheck,
+  Target,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +23,67 @@ import {
   recommendPlaybookApi,
 } from "@/services/operational-service";
 import type { PlaybookItem } from "@/types/operational";
+
+const PLAYBOOK_OPERATIONAL_METADATA: Record<
+  string,
+  {
+    threatScenario: string;
+    purpose: string;
+    authorizationRequired: string;
+    expectedOutcome: string;
+  }
+> = {
+  "PB-IR-001": {
+    threatScenario:
+      "Suspicious authentication from non-baseline IP/geolocation or successful login immediately following repeated failed login attempts (MITRE T1078 / T1110).",
+    purpose:
+      "Contain potential identity or session compromise on SSO/IAM gateways without disrupting legitimate enterprise authentication fabric.",
+    authorizationRequired:
+      "Requires SOC Duty Analyst approval for session revocation; IAM Lead sign-off if federated directory trust tokens must be rotated.",
+    expectedOutcome:
+      "Active unauthorized tokens are invalidated, MFA hardware challenge is re-established, and lateral identity movement is prevented.",
+  },
+  "PB-IR-002": {
+    threatScenario:
+      "Sustained automated credential stuffing or password spraying wave (>= 5 failed attempts within telemetry window) targeting exposed gateways.",
+    purpose:
+      "Throttle hostile authentication sources at perimeter rate-limiters and prevent account lockout denial-of-service against legitimate operators.",
+    authorizationRequired:
+      "SOC Analyst authorization for temporary WAF rate-limiting; Network Security Lead approval for permanent BGP/Perimeter blocklists.",
+    expectedOutcome:
+      "Brute-force volume drops to zero at edge ingress while preserving normal login availability for authorized personnel.",
+  },
+  "PB-IR-003": {
+    threatScenario:
+      "High-volume outbound data transfer (>= 50 MB) or unusual vault/table enumeration toward unverified external destinations (MITRE T1048 / T1071).",
+    purpose:
+      "Halt unauthorized data egress from critical database clusters, preserve volatile socket forensics, and rotate affected service credentials.",
+    authorizationRequired:
+      "Requires Joint Authorization from Incident Commander and Database Owner before isolating production database egress VLANs.",
+    expectedOutcome:
+      "Unauthorized outbound data stream is terminated, forensic packet metadata is preserved, and database read-replica access is locked down.",
+  },
+  "PB-IR-004": {
+    threatScenario:
+      "Unauthorized sudoers modification, container breakout indicator, or unexpected root/admin group elevation on internal hosts (MITRE T1068 / T1548).",
+    purpose:
+      "Isolate the affected workload from East-West management subnets, audit host integrity, and revert unauthorized privilege changes.",
+    authorizationRequired:
+      "Requires Infrastructure Lead and SOC Analyst approval before quarantining production application or SIEM collector nodes.",
+    expectedOutcome:
+      "Host is isolated from lateral movement paths, unauthorized privilege modifications are eradicated, and clean golden-image state is verified.",
+  },
+  "PB-IR-005": {
+    threatScenario:
+      "Lateral or external network port sweep probing >= 15 distinct TCP/UDP ports across protected subnets (MITRE T1046).",
+    purpose:
+      "Restrict reconnaissance visibility across internal VLANs and verify that no unpatched services were exposed to the scanning source.",
+    authorizationRequired:
+      "SOC Analyst authorization for internal micro-segmentation ACL updates.",
+    expectedOutcome:
+      "Reconnaissance source is blocked at subnet boundaries and exposed service attack surface is verified closed.",
+  },
+};
 
 export default function PlaybooksPage() {
   const { user, isLoading: authLoading, showToast } = useAuth();
@@ -69,6 +136,18 @@ export default function PlaybooksPage() {
       );
     }
   }
+
+  const activeMeta = selectedPlaybook
+    ? PLAYBOOK_OPERATIONAL_METADATA[selectedPlaybook.code] ?? {
+        threatScenario: selectedPlaybook.description,
+        purpose:
+          "Provide structured defensive containment, eradication, and recovery steps.",
+        authorizationRequired:
+          "Requires SOC Analyst verification and asset owner coordination.",
+        expectedOutcome:
+          "Threat indicator is contained, verified, and documented in the incident audit trail.",
+      }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -185,54 +264,131 @@ export default function PlaybooksPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" data-testid="playbook-detail-panel">
           <CardHeader>
-            <CardTitle>
-              {selectedPlaybook
-                ? `${selectedPlaybook.code} — ${selectedPlaybook.name}`
-                : "Playbook Procedure"}
-            </CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>
+                {selectedPlaybook
+                  ? `${selectedPlaybook.code} — ${selectedPlaybook.name}`
+                  : "Playbook Procedure"}
+              </CardTitle>
+              {selectedPlaybook ? (
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="default" className="uppercase">
+                    {selectedPlaybook.category}
+                  </Badge>
+                  <Badge
+                    variant={
+                      selectedPlaybook.target_severity === "critical"
+                        ? "destructive"
+                        : "warning"
+                    }
+                  >
+                    Target: {selectedPlaybook.target_severity.toUpperCase()}
+                  </Badge>
+                </div>
+              ) : null}
+            </div>
             <CardDescription>
               {selectedPlaybook?.description ??
                 "Select a playbook to view its defensive checklist."}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="rounded-lg border border-amber-500/30 bg-amber-950/15 p-3 text-[11px] text-amber-200">
-              <strong>Operational Safety Guardrail:</strong> Playbooks in SATRIA
-              SENTINEL provide structured defensive recommendations only. No
-              automated firewall blocking, host shutdown, or external system
-              modifications are executed automatically.
+          <CardContent className="space-y-4 text-xs">
+            {/* Advisory-Only Warning Banner */}
+            <div
+              data-testid="playbook-advisory-warning"
+              className="flex items-start gap-2.5 rounded-lg border border-amber-500/35 bg-amber-950/20 p-3.5 text-[11px] text-amber-200"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              <div>
+                <p className="font-semibold text-amber-300">
+                  Advisory-Only Operational Guardrail (Human-in-the-Loop)
+                </p>
+                <p className="mt-0.5 leading-relaxed">
+                  SATRIA SENTINEL provides structured defensive recommendations
+                  only. It does <strong>not</strong> automatically execute host
+                  isolation, firewall rule changes, or account lockouts on
+                  external infrastructure. Every action below must be reviewed
+                  and executed by an authorized operator.
+                </p>
+              </div>
             </div>
 
-            {selectedPlaybook ? (
-              <div
-                data-testid="playbook-steps-list"
-                className="space-y-3 pt-1"
-              >
-                {selectedPlaybook.steps_json.map((step) => (
-                  <div
-                    key={step.step_number}
-                    className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 font-semibold text-emerald-300">
-                        <CheckSquare className="h-4 w-4" />
-                        <span>
-                          Step {step.step_number}: {step.title}
-                        </span>
-                      </span>
-                      <Badge variant="default">{step.phase}</Badge>
-                    </div>
-                    <p className="text-slate-200 leading-relaxed">
-                      {step.instruction}
+            {selectedPlaybook && activeMeta ? (
+              <>
+                {/* Structured Scenario, Purpose, Authorization, and Expected Outcome */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 space-y-1">
+                    <p className="font-semibold text-emerald-300">
+                      1. Threat Scenario
                     </p>
-                    <p className="font-mono text-[11px] text-slate-400">
-                      Verification Criteria: {step.verification}
+                    <p className="text-slate-300 leading-relaxed">
+                      {activeMeta.threatScenario}
                     </p>
                   </div>
-                ))}
-              </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 space-y-1">
+                    <p className="font-semibold text-emerald-300">
+                      2. Operational Purpose
+                    </p>
+                    <p className="text-slate-300 leading-relaxed">
+                      {activeMeta.purpose}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 space-y-1">
+                    <p className="font-semibold text-amber-300">
+                      3. Required Authorization & Considerations
+                    </p>
+                    <p className="text-slate-300 leading-relaxed">
+                      {activeMeta.authorizationRequired}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 space-y-1">
+                    <p className="flex items-center gap-1.5 font-semibold text-emerald-300">
+                      <Target className="h-3.5 w-3.5" />
+                      <span>4. Expected Defensive Outcome</span>
+                    </p>
+                    <p className="text-slate-300 leading-relaxed">
+                      {activeMeta.expectedOutcome}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Recommended Defensive Actions */}
+                <div>
+                  <p className="mb-2 font-semibold text-slate-200">
+                    Recommended Defensive Actions (
+                    {selectedPlaybook.steps_json.length} Steps)
+                  </p>
+                  <div
+                    data-testid="playbook-steps-list"
+                    className="space-y-3"
+                  >
+                    {selectedPlaybook.steps_json.map((step) => (
+                      <div
+                        key={step.step_number}
+                        className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 font-semibold text-emerald-300">
+                            <CheckSquare className="h-4 w-4" />
+                            <span>
+                              Step {step.step_number}: {step.title}
+                            </span>
+                          </span>
+                          <Badge variant="default">{step.phase}</Badge>
+                        </div>
+                        <p className="text-slate-200 leading-relaxed">
+                          {step.instruction}
+                        </p>
+                        <p className="font-mono text-[11px] text-slate-400">
+                          Verification Criteria: {step.verification}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
             ) : null}
           </CardContent>
         </Card>

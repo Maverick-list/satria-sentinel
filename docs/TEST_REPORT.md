@@ -1,6 +1,6 @@
-# SATRIA SENTINEL — Phase 1 & Phase 2 Verification & Test Report
+# SATRIA SENTINEL — Phase 1, Phase 2 & Phase 3 Verification & Test Report
 
-Laporan ini mencatat hasil pengujian aktual yang dijalankan terhadap repositori **SATRIA SENTINEL** pada **Phase 2 Final Acceptance Audit**. Seluruh hasil pengujian di bawah ini berasal dari eksekusi nyata (*zero fabricated test results*).
+Laporan ini mencatat hasil pengujian aktual yang dijalankan terhadap repositori **SATRIA SENTINEL** pada **Phase 3 (UX Polish, Dashboard Intelligence & Operational Workflow)**. Seluruh hasil pengujian di bawah ini berasal dari eksekusi nyata (*zero fabricated test results*).
 
 ---
 
@@ -8,10 +8,10 @@ Laporan ini mencatat hasil pengujian aktual yang dijalankan terhadap repositori 
 
 | Kategori Pengujian | Alat Uji / Perintah | Jumlah Kasus Uji | Status | Waktu Eksekusi |
 | :--- | :--- | :--- | :--- | :--- |
-| **Backend Unit, Security & Integration Tests** | `pytest -v` (`backend/tests/`) | `9` *test suites* | **PASS (9 / 9)** | `1.38s` |
+| **Backend Unit, Security & Integration Tests** | `pytest -v` (`backend/tests/`) | `9` *test suites* | **PASS (9 / 9)** | `1.23s` |
 | **Frontend Static Typechecking** | `npm run typecheck` (`tsc --noEmit`) | Seluruh file `.ts` / `.tsx` | **PASS (0 error)** | `~1.4s` |
-| **Frontend Production Build** | `npm run build` (`next build`) | `10` *static/app routes* | **PASS** | `~2.1s` |
-| **End-to-End Browser Tests** | `npx playwright test` (`frontend/tests/e2e/`) | `3` *E2E acceptance specs* | **PASS (3 / 3)** | `~2.7s` |
+| **Frontend Production Build** | `npm run build` (`next build`) | `10` *static/app routes* | **PASS** | `~2.7s` |
+| **End-to-End Browser Tests** | `npx playwright test` (`frontend/tests/e2e/`) | `4` *E2E acceptance specs* | **PASS (4 / 4)** | `5.8s` |
 
 ---
 
@@ -44,9 +44,11 @@ File pengujian:
 
 File pengujian: [`frontend/tests/e2e/foundation.spec.ts`](../frontend/tests/e2e/foundation.spec.ts).
 
-1. **`1. Dashboard Health, Metrics, Login Modal & RBAC Role Switching (Admin <-> Viewer)`** (`PASSED`):
-   - Memverifikasi telemetri kesehatan PostgreSQL, pergantian peran dari `admin` ke `viewer` melalui modal login, penyembunyian aksi tulis (*Add Asset*) bagi `viewer`, dan pergantian kembali ke `admin`.
-2. **`2. Synthetic Generator, CSV/JSON Ingestion, Detections, Correlations, Escalation & Incident Investigation`** (`PASSED`):
-   - Memverifikasi pembangkitan skenario sintetis, impor log JSON langsung dari UI, eskalasi klaster korelasi ke insiden, perubahan status insiden ke `containment`, penambahan catatan investigasi, dan resolusi insiden beserta lini masa.
-3. **`3. Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation`** (`PASSED`):
-   - Memverifikasi pencocokan rekomendasi *playbook* pada `/playbooks`, pemeriksaan tabel jejak audit pada `/audit-logs`, dan transisi navigasi di seluruh 7 halaman utama.
+1. **`1. Dashboard Health, Priority Attention Queue, Asset Risk Overview & RBAC Role Switching`** (`PASSED` — `855ms`):
+   - Memverifikasi telemetri kesehatan PostgreSQL (`7 / 7 Tables Verified`), **Analyst Priority Attention Queue**, **Asset Risk Overview**, **Recent Incident Activity**, pergantian peran dari `admin` ke `viewer` melalui modal login, penyembunyian aksi tulis (*Add Asset*) bagi `viewer`, dan pergantian kembali ke `admin`.
+2. **`2. Synthetic Generator, CSV/JSON Ingestion, Detections, Correlations, Escalation & Incident Investigation`** (`PASSED` — `2.2s`):
+   - Memverifikasi pembangkitan skenario sintetis, impor log JSON langsung dari UI, eskalasi klaster korelasi ke insiden, penugasan analis (`incident-assign-submit`), pemeriksaan panel **Affected Assets**, **Detection Findings**, dan **Recommended Playbook**, perubahan status insiden ke `containment`, penambahan catatan investigasi, serta resolusi insiden beserta lini masa kronologis.
+3. **`3. Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation`** (`PASSED` — `947ms`):
+   - Memverifikasi banner peringatan *Advisory-Only*, pencocokan rekomendasi *playbook* pada `/playbooks`, pemeriksaan tabel jejak audit pada `/audit-logs`, dan transisi navigasi di seluruh 7 halaman utama.
+4. **`4. Complete 14-Step Repeatable Demonstration Scenario & Zero Console/Page Errors`** (`PASSED` — `1.2s`):
+   - Menjalankan skenario demonstrasi operasional 14 langkah secara utuh sebagai `security_analyst` dan memastikan tidak ada *uncaught page error* (`pageErrors == []`).

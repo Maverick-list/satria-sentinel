@@ -58,7 +58,7 @@ curl -s http://localhost:8000/api/v1/health | python3 -m json.tool
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run build && npm run start
 ```
 
 Buka `http://localhost:3000` pada browser.
@@ -82,7 +82,7 @@ npm run typecheck
 npm run build
 ```
 
-### 4.3. End-to-End Browser Tests (Playwright)
+### 4.3. End-to-End Browser Tests (Playwright — Termasuk Skenario Demo 14 Langkah)
 
 Pastikan backend (`:8000`) dan frontend (`:3000`) sedang berjalan, lalu jalankan:
 
@@ -91,10 +91,4 @@ cd frontend
 npx playwright test
 ```
 
-### 4.4. One-Command Verification Script
-
-Dari root repositori:
-
-```bash
-./scripts/verify-phase1.sh
-```
+Lihat [`docs/PHASE3_UX_WORKFLOW.md`](PHASE3_UX_WORKFLOW.md) untuk panduan lengkap demonstrasi operasional 14 langkah.

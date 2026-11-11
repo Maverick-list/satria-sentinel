@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, ShieldCheck, Sliders, Users } from "lucide-react";
+import {
+  CheckCircle2,
+  Lock,
+  Settings,
+  ShieldCheck,
+  Sliders,
+  UserCheck,
+  Users,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -18,6 +26,40 @@ import {
   listUsersApi,
 } from "@/services/operational-service";
 import type { AuthUser, DetectionRuleItem } from "@/types/operational";
+
+const ROLE_PERMISSIONS_MATRIX = [
+  {
+    capability: "Dashboard, Assets, Events, Incidents, Playbooks & Audit Read",
+    admin: true,
+    analyst: true,
+    viewer: true,
+  },
+  {
+    capability: "Synthetic Log Generation & CSV/JSON Log Ingestion",
+    admin: true,
+    analyst: true,
+    viewer: false,
+  },
+  {
+    capability: "Rule-Based Detection Scan & Correlation Execution",
+    admin: true,
+    analyst: true,
+    viewer: false,
+  },
+  {
+    capability:
+      "Incident Creation, Analyst Assignment, Notes & Root-Cause Resolution",
+    admin: true,
+    analyst: true,
+    viewer: false,
+  },
+  {
+    capability: "Asset Creation & Criticality Updates (POST/PATCH /assets)",
+    admin: true,
+    analyst: false,
+    viewer: false,
+  },
+];
 
 export default function SettingsPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -56,28 +98,127 @@ export default function SettingsPage() {
               Platform Settings & Security Baseline
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              RBAC role matrix, deterministic detection rule catalog, and
-              runtime environment configuration.
+              Current operator profile, RBAC permissions matrix, deterministic
+              detection rule catalog, and runtime security baseline.
             </p>
           </div>
         </div>
         <Badge variant="default" className="self-start sm:self-center">
-          Phase 2 Security Engine Active
+          Phase 3 Command Center Active
         </Badge>
       </div>
 
+      {/* Current Authenticated Session Profile */}
+      {user ? (
+        <Card data-testid="settings-current-user-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-emerald-400" />
+              <CardTitle>Active Operator Session</CardTitle>
+            </div>
+            <CardDescription>
+              Currently authenticated operator context (JWT session verified;
+              sensitive tokens and credentials are never displayed).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-4">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <p className="text-slate-400">Full Name</p>
+              <p className="mt-1 font-semibold text-slate-100">
+                {user.full_name}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <p className="text-slate-400">Operator Handle</p>
+              <p className="mt-1 font-mono font-semibold text-emerald-400">
+                @{user.username}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <p className="text-slate-400">Email</p>
+              <p className="mt-1 font-mono text-slate-200">{user.email}</p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+              <p className="text-slate-400">Assigned RBAC Role</p>
+              <div className="mt-1">
+                <Badge variant="default" className="font-mono uppercase">
+                  {user.role}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <SystemHealthPanel />
+
+      {/* Role Permissions Summary Matrix */}
+      <Card data-testid="settings-rbac-matrix-card">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-emerald-400" />
+            <CardTitle>Role-Based Access Control (RBAC) Matrix</CardTitle>
+          </div>
+          <CardDescription>
+            Server-side enforcement across FastAPI operational endpoints.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="pb-2.5 pr-4">Operational Capability</th>
+                  <th className="pb-2.5 pr-4 font-mono">ADMIN</th>
+                  <th className="pb-2.5 pr-4 font-mono">SECURITY_ANALYST</th>
+                  <th className="pb-2.5 font-mono">VIEWER</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/70">
+                {ROLE_PERMISSIONS_MATRIX.map((row) => (
+                  <tr key={row.capability}>
+                    <td className="py-2.5 pr-4 font-medium text-slate-200">
+                      {row.capability}
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      {row.admin ? (
+                        <Badge variant="default">Allowed</Badge>
+                      ) : (
+                        <Badge variant="secondary">Denied (403)</Badge>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      {row.analyst ? (
+                        <Badge variant="default">Allowed</Badge>
+                      ) : (
+                        <Badge variant="secondary">Denied (403)</Badge>
+                      )}
+                    </td>
+                    <td className="py-2.5">
+                      {row.viewer ? (
+                        <Badge variant="default">Read-Only</Badge>
+                      ) : (
+                        <Badge variant="secondary">Denied (403)</Badge>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-emerald-400" />
-              <CardTitle>RBAC Accounts & Access Control Matrix</CardTitle>
+              <CardTitle>Registered Platform Accounts</CardTitle>
             </div>
             <CardDescription>
-              Registered platform accounts (passwords hashed via RFC 7914
-              scrypt).
+              Registered accounts (passwords hashed via RFC 7914 scrypt; hashes
+              and tokens are never exposed).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-xs">
@@ -109,7 +250,8 @@ export default function SettingsPage() {
               <CardTitle>Enforced Security Baseline</CardTitle>
             </div>
             <CardDescription>
-              API Endpoint: <code className="font-mono text-emerald-400">{apiBaseUrl}</code>
+              API Endpoint:{" "}
+              <code className="font-mono text-emerald-400">{apiBaseUrl}</code>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -143,6 +285,14 @@ export default function SettingsPage() {
                   <strong>Safe Log Ingestion:</strong> Strictly bounded payload
                   size, schema validation, SHA-256 deduplication, and zero code
                   execution.
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span>
+                  <strong>Advisory-Only Response Playbooks:</strong> Defensive
+                  playbooks require human verification and never auto-modify
+                  external infrastructure.
                 </span>
               </li>
             </ul>

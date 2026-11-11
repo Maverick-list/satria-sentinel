@@ -46,6 +46,7 @@ export async function listAssetsApi(params: {
   search?: string;
   criticality?: string;
   status?: string;
+  environment?: string;
 }): Promise<PaginatedResponse<AssetItem>> {
   const sp = new URLSearchParams();
   sp.set("page", String(params.page ?? 1));
@@ -53,6 +54,7 @@ export async function listAssetsApi(params: {
   if (params.search) sp.set("search", params.search);
   if (params.criticality) sp.set("criticality", params.criticality);
   if (params.status) sp.set("status", params.status);
+  if (params.environment) sp.set("environment", params.environment);
   return apiFetch<PaginatedResponse<AssetItem>>(`/assets?${sp.toString()}`);
 }
 
@@ -89,6 +91,7 @@ export async function listSecurityEventsApi(params: {
   severity?: string;
   status?: string;
   eventType?: string;
+  assetId?: string;
 }): Promise<PaginatedResponse<SecurityEventItem>> {
   const sp = new URLSearchParams();
   sp.set("page", String(params.page ?? 1));
@@ -97,6 +100,7 @@ export async function listSecurityEventsApi(params: {
   if (params.severity) sp.set("severity", params.severity);
   if (params.status) sp.set("status", params.status);
   if (params.eventType) sp.set("event_type", params.eventType);
+  if (params.assetId) sp.set("asset_id", params.assetId);
   return apiFetch<PaginatedResponse<SecurityEventItem>>(
     `/security-events?${sp.toString()}`
   );
@@ -267,6 +271,22 @@ export async function assignIncidentApi(
   return apiFetch<IncidentItem>(`/incidents/${incidentId}/assign`, {
     method: "POST",
     body: JSON.stringify({ assigned_to_id: assignedToId, notes }),
+  });
+}
+
+export async function linkIncidentEventsApi(
+  incidentId: string,
+  securityEventIds: string[],
+  correlationRole = "correlated_indicator",
+  analystNotes?: string
+): Promise<IncidentItem> {
+  return apiFetch<IncidentItem>(`/incidents/${incidentId}/link-events`, {
+    method: "POST",
+    body: JSON.stringify({
+      security_event_ids: securityEventIds,
+      correlation_role: correlationRole,
+      analyst_notes: analystNotes,
+    }),
   });
 }
 
