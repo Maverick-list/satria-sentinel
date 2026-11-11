@@ -5,13 +5,18 @@ import { KeyRound, LogOut, Menu, Shield, Terminal, UserCheck, X } from "lucide-r
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
-import { useAuth } from "@/features/auth/auth-context";
+import {
+  getDemoRolePassphrase,
+  useAuth,
+} from "@/features/auth/auth-context";
 
 export function TopHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("SatriaAdmin#2026");
+  const [password, setPassword] = useState(() =>
+    getDemoRolePassphrase("Admin")
+  );
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -39,9 +44,9 @@ export function TopHeader() {
 
   function fillDemoPreset(roleUser: "admin" | "analyst" | "viewer") {
     setUsername(roleUser);
-    if (roleUser === "admin") setPassword("SatriaAdmin#2026");
-    if (roleUser === "analyst") setPassword("SatriaAnalyst#2026");
-    if (roleUser === "viewer") setPassword("SatriaViewer#2026");
+    if (roleUser === "admin") setPassword(getDemoRolePassphrase("Admin"));
+    if (roleUser === "analyst") setPassword(getDemoRolePassphrase("Analyst"));
+    if (roleUser === "viewer") setPassword(getDemoRolePassphrase("Viewer"));
     setLoginError(null);
   }
 

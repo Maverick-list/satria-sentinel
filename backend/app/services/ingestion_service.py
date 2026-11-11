@@ -329,16 +329,22 @@ def parse_and_ingest_payload(
         raise AppError(
             message=f"Upload payload exceeds maximum allowed size of {settings.MAX_UPLOAD_SIZE_BYTES} bytes.",
             code="PAYLOAD_TOO_LARGE",
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
         )
 
     fmt = (format_type or "").strip().lower()
     if filename:
-        lower_name = filename.lower()
+        lower_name = filename.strip().lower()
         if lower_name.endswith(".csv"):
             fmt = "csv"
         elif lower_name.endswith(".json"):
             fmt = "json"
+        else:
+            raise AppError(
+                message="Unsupported filename extension. Only '.csv' and '.json' files are permitted.",
+                code="UNSUPPORTED_LOG_FORMAT",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
     if fmt not in {"csv", "json"}:
         raise AppError(
@@ -399,6 +405,13 @@ def parse_and_ingest_payload(
                 (k or "").strip(): v for k, v in row.items() if k is not None
             }
             records.append(cleaned_row)
+
+    if not records:
+        raise AppError(
+            message="Uploaded log file contains zero event records.",
+            code="EMPTY_LOG_CONTENT",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
     if len(records) > 1000:
         raise AppError(

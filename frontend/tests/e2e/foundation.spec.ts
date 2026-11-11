@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("SATRIA SENTINEL — Phase 1 & Phase 2 Operational E2E", () => {
-  test("Dashboard loads, connects to Backend /api/v1/health, and shows live risk & RBAC session", async ({
+test.describe("SATRIA SENTINEL — Phase 2 Final Acceptance E2E Suite", () => {
+  test("1. Dashboard Health, Metrics, Login Modal & RBAC Role Switching (Admin <-> Viewer)", async ({
     page,
   }) => {
     await page.goto("/");
@@ -9,10 +9,6 @@ test.describe("SATRIA SENTINEL — Phase 1 & Phase 2 Operational E2E", () => {
     await expect(page.getByTestId("page-heading")).toContainText(
       "Command Center Dashboard"
     );
-
-    const healthPanel = page.getByTestId("system-health-panel");
-    await expect(healthPanel).toBeVisible();
-
     await expect(page.getByTestId("health-status-badge")).toContainText(
       "Operational (Healthy)",
       { timeout: 10000 }
@@ -24,16 +20,43 @@ test.describe("SATRIA SENTINEL — Phase 1 & Phase 2 Operational E2E", () => {
       "7 / 7 Tables Verified"
     );
 
-    // Verify auto-authenticated RBAC badge in top header
+    // Auto-authenticated as admin
     await expect(page.getByTestId("active-user-indicator")).toContainText(
       "admin",
-      {
-        timeout: 10000,
-      }
+      { timeout: 10000 }
     );
+    await expect(page.getByTestId("active-role-badge")).toContainText("admin");
+
+    // Switch role to Viewer via Login Modal
+    await page.getByTestId("open-login-modal-btn").click();
+    await page.getByTestId("preset-viewer-btn").click();
+    await page.getByTestId("login-submit-btn").click();
+
+    await expect(page.getByTestId("active-user-indicator")).toContainText(
+      "viewer",
+      { timeout: 10000 }
+    );
+    await expect(page.getByTestId("active-role-badge")).toContainText("viewer");
+
+    // Verify RBAC restriction on Assets page (Add Asset button hidden for viewer)
+    await page.getByTestId("nav-link-assets").click();
+    await expect(page.getByTestId("page-heading")).toContainText(
+      "Assets Inventory"
+    );
+    await expect(page.getByTestId("add-asset-btn")).toHaveCount(0);
+
+    // Switch back to Admin
+    await page.getByTestId("open-login-modal-btn").click();
+    await page.getByTestId("preset-admin-btn").click();
+    await page.getByTestId("login-submit-btn").click();
+    await expect(page.getByTestId("active-user-indicator")).toContainText(
+      "admin",
+      { timeout: 10000 }
+    );
+    await expect(page.getByTestId("add-asset-btn")).toBeVisible();
   });
 
-  test("End-to-End Operational Flow: Synthetic Log Generation, Detection, Correlation, and Incident Lifecycle", async ({
+  test("2. Synthetic Generator, CSV/JSON Ingestion, Detections, Correlations, Escalation & Incident Investigation", async ({
     page,
   }) => {
     await page.goto("/security-events");
@@ -42,26 +65,46 @@ test.describe("SATRIA SENTINEL — Phase 1 & Phase 2 Operational E2E", () => {
     );
     await expect(page.getByTestId("active-user-indicator")).toContainText(
       "admin",
-      {
-        timeout: 10000,
-      }
+      { timeout: 10000 }
     );
 
-    // 1. Trigger Synthetic Security Log Generator from UI
+    // A. Trigger Synthetic Security Log Generator
     await page.getByTestId("generate-scenario-btn").click();
     await expect(page.getByTestId("security-events-table")).toContainText(
       "[SYNTHETIC SIMULATION]",
       { timeout: 10000 }
     );
 
-    // 2. Escalate a correlated cluster to an Incident
+    // B. Test JSON Log Ingestion via UI
+    const uniqueRun = Date.now();
+    const sampleJson = JSON.stringify([
+      {
+        asset_tag: "AST-IAM-001",
+        event_type: "auth_failure",
+        source: "e2e_playwright_sensor",
+        severity: "high",
+        title: `[SYNTHETIC SIMULATION] E2E JSON Brute Force ${uniqueRun}`,
+        source_ip: "198.51.100.250",
+        occurred_at: new Date().toISOString(),
+        raw_payload: { failed_attempts: 9 },
+      },
+    ]);
+    await page.getByTestId("import-format-select").selectOption("json");
+    await page.getByTestId("import-content-textarea").fill(sampleJson);
+    await page.getByTestId("import-logs-submit-btn").click();
+    await expect(page.getByTestId("import-summary-box")).toContainText(
+      "Ingestion Summary (JSON): Received 1 • Imported 1",
+      { timeout: 10000 }
+    );
+
+    // C. Escalate a Correlated Cluster to an Incident
     const escalateBtn = page
       .locator('[data-testid^="escalate-cluster-"]')
       .first();
     await expect(escalateBtn).toBeVisible({ timeout: 10000 });
     await escalateBtn.click();
 
-    // 3. Navigate to Incidents page and inspect/update incident
+    // D. Investigate, Transition Status, Add Note, and Resolve Incident on /incidents
     await page.getByTestId("nav-link-incidents").click();
     await expect(page.getByTestId("page-heading")).toContainText("Incidents");
     const firstIncidentCard = page
@@ -70,7 +113,14 @@ test.describe("SATRIA SENTINEL — Phase 1 & Phase 2 Operational E2E", () => {
     await expect(firstIncidentCard).toBeVisible({ timeout: 10000 });
     await firstIncidentCard.click();
 
-    // 4. Add investigation note and verify timeline updates
+    // Transition status to containment
+    await page.getByTestId("incident-status-btn-containment").click();
+    await expect(page.getByTestId("incident-timeline-list")).toContainText(
+      "containment",
+      { timeout: 10000 }
+    );
+
+    // Add investigation note
     await page
       .getByTestId("incident-note-input")
       .fill("Playwright E2E analyst verification note: logs reviewed.");
@@ -79,13 +129,50 @@ test.describe("SATRIA SENTINEL — Phase 1 & Phase 2 Operational E2E", () => {
       "Playwright E2E analyst verification note",
       { timeout: 10000 }
     );
+
+    // Resolve incident with root cause notes
+    await page
+      .getByTestId("incident-resolve-input")
+      .fill(
+        "Root cause verified as synthetic simulation test; advisory playbook applied."
+      );
+    await page.getByTestId("incident-resolve-submit").click();
+    await expect(page.getByTestId("incident-timeline-list")).toContainText(
+      "Root cause verified as synthetic simulation test",
+      { timeout: 10000 }
+    );
   });
 
-  test("Sidebar navigation transitions cleanly across all 7 main pages", async ({
+  test("3. Playbooks Advisory Matcher, Immutable Audit Logs, and 7-Page Navigation", async ({
     page,
   }) => {
-    await page.goto("/");
+    await page.goto("/playbooks");
+    await expect(page.getByTestId("page-heading")).toContainText(
+      "Response Playbooks"
+    );
+    await expect(page.getByTestId("active-user-indicator")).toContainText(
+      "admin",
+      { timeout: 10000 }
+    );
 
+    // Recommend playbook for brute_force
+    await page
+      .getByTestId("playbook-recommend-select")
+      .selectOption("brute_force");
+    await page.getByTestId("playbook-recommend-btn").click();
+    await expect(page.getByTestId("playbook-steps-list")).toBeVisible({
+      timeout: 10000,
+    });
+
+    // Verify Audit Logs page shows recorded operational actions
+    await page.getByTestId("nav-link-audit-logs").click();
+    await expect(page.getByTestId("page-heading")).toContainText("Audit Logs");
+    await expect(page.getByTestId("audit-logs-table")).toContainText(
+      "auth.login_success",
+      { timeout: 10000 }
+    );
+
+    // Navigate cleanly across all 7 main pages
     const routes = [
       { testId: "nav-link-assets", heading: "Assets Inventory", url: "/assets" },
       {

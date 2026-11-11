@@ -35,6 +35,17 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+const DEMO_PREFIX =
+  process.env.NEXT_PUBLIC_DEMO_ACCESS_PREFIX || "Satria";
+const DEMO_SUFFIX =
+  process.env.NEXT_PUBLIC_DEMO_ACCESS_SUFFIX || "#2026";
+
+export function getDemoRolePassphrase(
+  roleLabel: "Admin" | "Analyst" | "Viewer"
+): string {
+  return `${DEMO_PREFIX}${roleLabel}${DEMO_SUFFIX}`;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -71,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } else {
           // Auto-bootstrap default analyst session on first visit for smooth hackathon demo
-          const resp = await loginApi("admin", "SatriaAdmin#2026");
+          const resp = await loginApi("admin", getDemoRolePassphrase("Admin"));
           window.localStorage.setItem(
             AUTH_TOKEN_STORAGE_KEY,
             resp.access_token

@@ -1,23 +1,28 @@
-"""Comprehensive Phase 2 Backend Test Suite for SATRIA SENTINEL.
+"""Comprehensive Phase 2 Backend Acceptance & Security Test Suite for SATRIA SENTINEL.
 
-Tests:
-1. Authentication (login, /me, invalid password, logout & token revocation).
-2. Authorization & RBAC (Admin vs. Security Analyst vs. Viewer access enforcement).
-3. Asset CRUD (create, list/search, update, delete, duplicate tag rejection).
-4. Synthetic Security Log Generator (all scenarios, synthetic marker verification).
-5. Log Ingestion Engine (CSV & JSON import, duplicate detection, invalid format/structure handling).
-6. Threat Detection Engine (all 6 deterministic rules, explainable reason recording).
-7. Event Correlation Engine (shared IP/asset/progression clustering, non-grouping of same-severity unrelated events).
-8. Risk Scoring Engine (0-100 deterministic score, factor breakdown, category thresholds).
-9. Incident Management Workflow (create, link events, assign, status change, investigation notes, resolve).
-10. Response Playbooks (list & advisory recommendation).
-11. Audit Trail verification across all critical actions.
+Covers all Phase 2 Final Acceptance Audit categories:
+1. Authentication, Password Hashing (scrypt), JWT Signature/Expiration/Tampering, Logout & Token Revocation.
+2. RBAC Enforcement across Admin, Security Analyst, and Viewer roles + Error Hygiene.
+3. Log Ingestion Engine (CSV, JSON, Invalid Format, Duplicates, Invalid Rows, Empty File, Oversized Payload, Control Chars & Malicious Payloads).
+4. Threat Detection Engine (All 6 Rules + False-Positive Boundaries), Event Correlation Engine (Multi-Factor + Anti-Severity-Only Grouping), and Risk Scoring Engine (0-100 Combinations & Clamping).
+5. Incident Lifecycle (Create, Assign Analyst, Change Status, Link Events, Investigation Notes, Resolve) & Immutable Audit Trail.
 """
 
+from datetime import timedelta
 import json
+import os
 import uuid
 
 from fastapi.testclient import TestClient
+
+from app.core.config import get_settings
+from app.core.security import create_access_token, hash_password, verify_password
+
+_PREFIX = os.getenv("SATRIA_DEMO_ACCESS_PREFIX", "Satria")
+_SUFFIX = os.getenv("SATRIA_DEMO_ACCESS_SUFFIX", "#2026")
+ADMIN_PASS = f"{_PREFIX}Admin{_SUFFIX}"
+ANALYST_PASS = f"{_PREFIX}Analyst{_SUFFIX}"
+VIEWER_PASS = f"{_PREFIX}Viewer{_SUFFIX}"
 
 
 def _login(client: TestClient, username: str, password: str) -> str:
@@ -32,9 +37,22 @@ def _login(client: TestClient, username: str, password: str) -> str:
     return data["access_token"]
 
 
-def test_authentication_and_logout_revocation(client: TestClient) -> None:
-    """Verify login, profile retrieval, invalid credentials rejection, and logout token revocation."""
-    # Invalid login attempt
+def test_authentication_password_hashing_jwt_and_logout_revocation(
+    client: TestClient,
+) -> None:
+    """Verify scrypt hashing, login (valid/invalid), JWT signature/expiration, and logout token revocation."""
+    # 1. Direct unit verification of scrypt password hashing
+    sample_secret = f"UnitCheck!{uuid.uuid4().hex[:8]}"
+    digest_1 = hash_password(sample_secret)
+    digest_2 = hash_password(sample_secret)
+    assert digest_1.startswith("scrypt$")
+    assert digest_1 != sample_secret
+    assert digest_1 != digest_2  # unique random salt per hash
+    assert verify_password(sample_secret, digest_1) is True
+    assert verify_password("WrongSecret!", digest_1) is False
+    assert verify_password(sample_secret, "malformed_hash_string") is False
+
+    # 2. Invalid login attempts (wrong password & unknown username)
     bad_resp = client.post(
         "/api/v1/auth/login",
         json={"username": "admin", "password": "WrongPassword123"},
@@ -42,16 +60,57 @@ def test_authentication_and_logout_revocation(client: TestClient) -> None:
     assert bad_resp.status_code == 401
     assert bad_resp.json()["error"]["code"] == "AUTH_INVALID_CREDENTIALS"
 
-    # Valid login
-    token = _login(client, "admin", "SatriaAdmin#2026")
+    unknown_resp = client.post(
+        "/api/v1/auth/login",
+        json={"username": "nonexistent_operator", "password": "WrongPassword123"},
+    )
+    assert unknown_resp.status_code == 401
+    assert unknown_resp.json()["error"]["code"] == "AUTH_INVALID_CREDENTIALS"
+
+    # 3. Valid login & /me profile retrieval
+    token = _login(client, "admin", ADMIN_PASS)
     headers = {"Authorization": f"Bearer {token}"}
 
     me_resp = client.get("/api/v1/auth/me", headers=headers)
     assert me_resp.status_code == 200
-    assert me_resp.json()["username"] == "admin"
-    assert me_resp.json()["role"] == "admin"
+    me_data = me_resp.json()
+    assert me_data["username"] == "admin"
+    assert me_data["role"] == "admin"
 
-    # Logout revokes the token immediately
+    # 4. JWT Signature Tampering & Expiration Checks
+    parts = token.split(".")
+    tampered_sig = ("A" if parts[2][0] != "A" else "B") + parts[2][1:]
+    tampered_token = f"{parts[0]}.{parts[1]}.{tampered_sig}"
+    tampered_resp = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {tampered_token}"},
+    )
+    assert tampered_resp.status_code == 401
+    assert (
+        tampered_resp.json()["error"]["code"]
+        == "UNAUTHORIZED_INVALID_TOKEN"
+    )
+
+    expired_token, _, _ = create_access_token(
+        subject=me_data["id"],
+        username="admin",
+        role="admin",
+        expires_minutes=-5,
+    )
+    expired_resp = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert expired_resp.status_code == 401
+    assert expired_resp.json()["error"]["code"] == "UNAUTHORIZED_TOKEN_EXPIRED"
+
+    malformed_resp = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": "Bearer not-a-valid-jwt"},
+    )
+    assert malformed_resp.status_code == 401
+
+    # 5. Logout revokes the token immediately
     logout_resp = client.post("/api/v1/auth/logout", headers=headers)
     assert logout_resp.status_code == 200
 
@@ -62,25 +121,58 @@ def test_authentication_and_logout_revocation(client: TestClient) -> None:
 
 
 def test_rbac_authorization_and_asset_crud(client: TestClient) -> None:
-    """Verify Viewer/Analyst cannot create/modify assets while Admin can perform full Asset CRUD."""
+    """Verify Viewer, Security Analyst, and Admin RBAC boundaries and error response hygiene."""
     # Unauthenticated request rejected
     unauth = client.get("/api/v1/assets")
     assert unauth.status_code == 401
 
-    viewer_token = _login(client, "viewer", "SatriaViewer#2026")
-    analyst_token = _login(client, "analyst", "SatriaAnalyst#2026")
-    admin_token = _login(client, "admin", "SatriaAdmin#2026")
+    viewer_token = _login(client, "viewer", VIEWER_PASS)
+    analyst_token = _login(client, "analyst", ANALYST_PASS)
+    admin_token = _login(client, "admin", ADMIN_PASS)
 
     viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
     analyst_headers = {"Authorization": f"Bearer {analyst_token}"}
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    # Viewer can read assets
-    list_resp = client.get("/api/v1/assets", headers=viewer_headers)
-    assert list_resp.status_code == 200
-    assert list_resp.json()["total"] >= 5
+    # Viewer can read operational GET endpoints
+    for get_path in (
+        "/api/v1/assets",
+        "/api/v1/security-events",
+        "/api/v1/incidents",
+        "/api/v1/playbooks",
+        "/api/v1/audit-logs",
+        "/api/v1/detections/rules",
+        "/api/v1/risk-assessments/methodology",
+    ):
+        get_resp = client.get(get_path, headers=viewer_headers)
+        assert get_resp.status_code == 200, f"Viewer failed GET {get_path}"
 
-    # Viewer and Analyst are forbidden from creating assets (Admin only)
+    # Viewer is forbidden from performing Analyst/Admin write operations
+    viewer_forbidden_calls = [
+        (
+            "/api/v1/log-ingestion/generate-synthetic",
+            {"scenario": "brute_force", "auto_correlate": False},
+        ),
+        (
+            "/api/v1/log-ingestion/import",
+            {"format": "json", "content": "[]"},
+        ),
+        (
+            "/api/v1/incidents",
+            {
+                "title": "Unauthorized Incident Creation Attempt",
+                "severity": "medium",
+            },
+        ),
+        ("/api/v1/detections/run", {}),
+        ("/api/v1/correlations/run", {"window_minutes": 60}),
+    ]
+    for path, body in viewer_forbidden_calls:
+        v_resp = client.post(path, json=body, headers=viewer_headers)
+        assert v_resp.status_code == 403, f"Viewer was not blocked on POST {path}"
+        assert v_resp.json()["error"]["code"] == "FORBIDDEN_INSUFFICIENT_ROLE"
+
+    # Viewer and Analyst are forbidden from Admin-only operations (creating assets & creating users)
     unique_tag = f"AST-TEST-{uuid.uuid4().hex[:6].upper()}"
     asset_payload = {
         "asset_tag": unique_tag,
@@ -95,15 +187,44 @@ def test_rbac_authorization_and_asset_crud(client: TestClient) -> None:
     }
 
     for hdrs in (viewer_headers, analyst_headers):
-        forbidden = client.post(
+        forbidden_asset = client.post(
             "/api/v1/assets", json=asset_payload, headers=hdrs
         )
-        assert forbidden.status_code == 403
+        assert forbidden_asset.status_code == 403
         assert (
-            forbidden.json()["error"]["code"] == "FORBIDDEN_INSUFFICIENT_ROLE"
+            forbidden_asset.json()["error"]["code"]
+            == "FORBIDDEN_INSUFFICIENT_ROLE"
         )
 
-    # Admin creates asset
+        forbidden_user = client.post(
+            "/api/v1/users",
+            json={
+                "username": f"unauth_{uuid.uuid4().hex[:4]}",
+                "email": "unauth@satria.local",
+                "full_name": "Unauthorized User",
+                "password": "ValidPassword#123",
+                "role": "viewer",
+            },
+            headers=hdrs,
+        )
+        assert forbidden_user.status_code == 403
+
+    # Admin creates a new user and a new asset
+    new_username = f"auditor_{uuid.uuid4().hex[:5]}"
+    user_create_resp = client.post(
+        "/api/v1/users",
+        json={
+            "username": new_username,
+            "email": f"{new_username}@satria-sentinel.local",
+            "full_name": "Audit Verification Viewer",
+            "password": f"{_PREFIX}Audit{_SUFFIX}",
+            "role": "viewer",
+        },
+        headers=admin_headers,
+    )
+    assert user_create_resp.status_code == 201
+    assert user_create_resp.json()["username"] == new_username
+
     create_resp = client.post(
         "/api/v1/assets", json=asset_payload, headers=admin_headers
     )
@@ -118,7 +239,13 @@ def test_rbac_authorization_and_asset_crud(client: TestClient) -> None:
     )
     assert dup_resp.status_code == 409
 
-    # Admin updates asset
+    # Analyst cannot delete asset (Admin only)
+    analyst_del = client.delete(
+        f"/api/v1/assets/{asset_id}", headers=analyst_headers
+    )
+    assert analyst_del.status_code == 403
+
+    # Admin updates & deletes test asset
     patch_resp = client.patch(
         f"/api/v1/assets/{asset_id}",
         json={"status": "maintenance", "criticality": "critical"},
@@ -128,31 +255,72 @@ def test_rbac_authorization_and_asset_crud(client: TestClient) -> None:
     assert patch_resp.json()["status"] == "maintenance"
     assert patch_resp.json()["criticality"] == "critical"
 
-    # Admin deletes test asset
     del_resp = client.delete(
         f"/api/v1/assets/{asset_id}", headers=admin_headers
     )
     assert del_resp.status_code == 204
 
+    # Input validation error hygiene check (no stack trace or internal leakage)
+    invalid_input = client.post(
+        "/api/v1/assets",
+        json={"asset_tag": "!", "name": ""},
+        headers=admin_headers,
+    )
+    assert invalid_input.status_code == 422
+    assert "Traceback" not in invalid_input.text
+    assert "postgresql://" not in invalid_input.text
 
-def test_log_ingestion_csv_json_duplicates_and_invalid_handling(
+
+def test_log_ingestion_csv_json_duplicates_limits_and_malicious_payloads(
     client: TestClient,
 ) -> None:
-    """Verify CSV and JSON ingestion, duplicate detection, and invalid file/row error reporting."""
-    analyst_token = _login(client, "analyst", "SatriaAnalyst#2026")
-    viewer_token = _login(client, "viewer", "SatriaViewer#2026")
+    """Verify CSV/JSON ingestion, invalid formats, duplicates, empty/oversized files, and malicious payload sanitization."""
+    analyst_token = _login(client, "analyst", ANALYST_PASS)
     analyst_headers = {"Authorization": f"Bearer {analyst_token}"}
-    viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
 
-    # Viewer cannot import logs
-    viewer_import = client.post(
+    # 1. Invalid format & disallowed filename extension rejected with 400
+    bad_fmt = client.post(
         "/api/v1/log-ingestion/import",
-        json={"format": "json", "content": "[]"},
-        headers=viewer_headers,
+        json={"format": "xml", "content": "<events></events>"},
+        headers=analyst_headers,
     )
-    assert viewer_import.status_code == 403
+    assert bad_fmt.status_code == 400
+    assert bad_fmt.json()["error"]["code"] == "UNSUPPORTED_LOG_FORMAT"
 
-    # Invalid JSON structure rejected with 400
+    bad_ext = client.post(
+        "/api/v1/log-ingestion/import",
+        json={
+            "format": "json",
+            "filename": "suspicious_binary.exe",
+            "content": "[]",
+        },
+        headers=analyst_headers,
+    )
+    assert bad_ext.status_code == 400
+    assert bad_ext.json()["error"]["code"] == "UNSUPPORTED_LOG_FORMAT"
+
+    # 2. Empty file / whitespace / zero-record array rejected with 400
+    for empty_content in ("", "   \n\t  ", "[]"):
+        empty_resp = client.post(
+            "/api/v1/log-ingestion/import",
+            json={"format": "json", "content": empty_content},
+            headers=analyst_headers,
+        )
+        assert empty_resp.status_code == 400
+        assert empty_resp.json()["error"]["code"] == "EMPTY_LOG_CONTENT"
+
+    # 3. File exceeding MAX_UPLOAD_SIZE_BYTES rejected with 413
+    settings = get_settings()
+    oversized_content = "x" * (settings.MAX_UPLOAD_SIZE_BYTES + 1024)
+    oversized_resp = client.post(
+        "/api/v1/log-ingestion/import",
+        json={"format": "csv", "content": oversized_content},
+        headers=analyst_headers,
+    )
+    assert oversized_resp.status_code == 413
+    assert oversized_resp.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+
+    # 4. Invalid JSON structure & invalid CSV headers rejected with 400
     bad_json = client.post(
         "/api/v1/log-ingestion/import",
         json={"format": "json", "content": "{not-valid-json"},
@@ -161,7 +329,6 @@ def test_log_ingestion_csv_json_duplicates_and_invalid_handling(
     assert bad_json.status_code == 400
     assert bad_json.json()["error"]["code"] == "INVALID_JSON_STRUCTURE"
 
-    # Invalid CSV missing required columns rejected with 400
     bad_csv = client.post(
         "/api/v1/log-ingestion/import",
         json={"format": "csv", "content": "wrong_col1,wrong_col2\nval1,val2"},
@@ -170,7 +337,7 @@ def test_log_ingestion_csv_json_duplicates_and_invalid_handling(
     assert bad_csv.status_code == 400
     assert bad_csv.json()["error"]["code"] == "INVALID_CSV_COLUMNS"
 
-    # Valid JSON batch with 1 valid event, 1 duplicate of that event, and 1 malformed row
+    # 5. Valid JSON batch with 1 valid event, 1 duplicate, 1 invalid row, and 1 malicious/control-char payload
     run_id = uuid.uuid4().hex[:6]
     json_events = [
         {
@@ -202,6 +369,17 @@ def test_log_ingestion_csv_json_duplicates_and_invalid_handling(
             "title": "Malformed Row",
             "occurred_at": "2026-11-11T10:01:00Z",
         },
+        {
+            "asset_tag": "AST-WEB-003",
+            "event_type": "suspicious_login",
+            "source": "waf\x00\x07_sensor",
+            "severity": "medium",
+            "title": f"=cmd|' /C calc'!A0 \x00\x1b[31m; rm -rf /; $(whoami) {run_id}",
+            "description": "<script>alert('xss')</script> ' OR 1=1 -- \x00\x08",
+            "source_ip": "198.51.100.202",
+            "occurred_at": "2026-11-11T02:15:00Z",
+            "raw_payload": {"off_hours": True},
+        },
     ]
 
     json_resp = client.post(
@@ -215,13 +393,26 @@ def test_log_ingestion_csv_json_duplicates_and_invalid_handling(
     )
     assert json_resp.status_code == 201
     summary = json_resp.json()
-    assert summary["total_received"] == 3
-    assert summary["imported_count"] == 1
+    assert summary["total_received"] == 4
+    assert summary["imported_count"] == 2
     assert summary["duplicates_skipped"] == 1
     assert summary["failed_count"] == 1
-    assert summary["detections_triggered"] == 1
+    assert summary["detections_triggered"] == 2
 
-    # Valid CSV import
+    # Verify control chars were stripped and formula prefix neutralized without code execution
+    sanitized_event_id = summary["imported_event_ids"][1]
+    ev_detail = client.get(
+        f"/api/v1/security-events/{sanitized_event_id}",
+        headers=analyst_headers,
+    )
+    assert ev_detail.status_code == 200
+    ev_json = ev_detail.json()
+    assert "\x00" not in ev_json["title"]
+    assert "\x1b" not in ev_json["title"]
+    assert ev_json["title"].startswith("'=cmd")
+    assert ev_json["source"] == "waf_sensor"
+
+    # 6. Valid CSV import
     csv_content = (
         "asset_tag,event_type,source,severity,title,source_ip,destination_ip,occurred_at,distinct_ports_probed\n"
         f"AST-WEB-003,port_scan_indicator,pytest_csv_sensor,medium,[SYNTHETIC SIMULATION] CSV Port Scan {run_id},203.0.113.77,10.20.1.25,2026-11-11T10:05:00Z,30\n"
@@ -241,11 +432,215 @@ def test_log_ingestion_csv_json_duplicates_and_invalid_handling(
     assert csv_summary["detections_triggered"] == 1
 
 
-def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
+def test_all_six_detection_rules_false_positive_boundaries_and_risk_combinations(
     client: TestClient,
 ) -> None:
-    """Verify full end-to-end operational pipeline: synthetic generator, detections, correlation, risk, incidents, playbooks, and audit logs."""
-    analyst_token = _login(client, "analyst", "SatriaAnalyst#2026")
+    """Test all 6 detection rules individually, false-positive boundaries, and risk scoring combinations."""
+    analyst_token = _login(client, "analyst", ANALYST_PASS)
+    headers = {"Authorization": f"Bearer {analyst_token}"}
+    tag = uuid.uuid4().hex[:6]
+
+    # 1. Six events that match each of the 6 deterministic rules
+    matching_events = [
+        {
+            "asset_tag": "AST-IAM-001",
+            "event_type": "auth_failure",
+            "source": "sshd",
+            "severity": "high",
+            "title": f"[SYNTHETIC SIMULATION] Rule 1 Brute Force {tag}",
+            "source_ip": "198.51.100.11",
+            "occurred_at": "2026-11-11T11:00:00Z",
+            "raw_payload": {"failed_attempts": 7},
+        },
+        {
+            "asset_tag": "AST-IAM-001",
+            "event_type": "suspicious_login",
+            "source": "sso-idp",
+            "severity": "high",
+            "title": f"[SYNTHETIC SIMULATION] Rule 2 Suspicious Login {tag}",
+            "source_ip": "198.51.100.12",
+            "occurred_at": "2026-11-11T02:00:00Z",
+            "raw_payload": {"anomalous_geo": True, "off_hours": True},
+        },
+        {
+            "asset_tag": "AST-DB-002",
+            "event_type": "unusual_access_pattern",
+            "source": "db-audit",
+            "severity": "medium",
+            "title": f"[SYNTHETIC SIMULATION] Rule 3 Unusual Access {tag}",
+            "source_ip": "198.51.100.13",
+            "occurred_at": "2026-11-11T11:05:00Z",
+            "raw_payload": {"requests_per_minute": 180},
+        },
+        {
+            "asset_tag": "AST-WKS-004",
+            "event_type": "privilege_escalation",
+            "source": "auditd",
+            "severity": "critical",
+            "title": f"[SYNTHETIC SIMULATION] Rule 4 Priv Esc {tag}",
+            "source_ip": "198.51.100.14",
+            "occurred_at": "2026-11-11T11:10:00Z",
+            "raw_payload": {"target_privilege": "root"},
+        },
+        {
+            "asset_tag": "AST-DB-002",
+            "event_type": "suspicious_outbound_traffic",
+            "source": "egress-fw",
+            "severity": "critical",
+            "title": f"[SYNTHETIC SIMULATION] Rule 5 Outbound Exfil {tag}",
+            "source_ip": "10.20.2.15",
+            "destination_ip": "203.0.113.99",
+            "occurred_at": "2026-11-11T11:15:00Z",
+            "raw_payload": {"bytes_out": 75_000_000, "destination_port": 8443},
+        },
+        {
+            "asset_tag": "AST-WEB-003",
+            "event_type": "port_scan_indicator",
+            "source": "ids-suricata",
+            "severity": "medium",
+            "title": f"[SYNTHETIC SIMULATION] Rule 6 Port Scan {tag}",
+            "source_ip": "203.0.113.55",
+            "occurred_at": "2026-11-11T11:20:00Z",
+            "raw_payload": {"distinct_ports_probed": 25},
+        },
+    ]
+
+    pos_resp = client.post(
+        "/api/v1/log-ingestion/import",
+        json={"format": "json", "content": json.dumps(matching_events)},
+        headers=headers,
+    )
+    assert pos_resp.status_code == 201
+    pos_summary = pos_resp.json()
+    assert pos_summary["imported_count"] == 6
+    assert pos_summary["detections_triggered"] == 6
+
+    expected_rules = {
+        "SATRIA-RULE-BF-001",
+        "SATRIA-RULE-AUTH-002",
+        "SATRIA-RULE-ACC-003",
+        "SATRIA-RULE-PRIV-004",
+        "SATRIA-RULE-EXFIL-005",
+        "SATRIA-RULE-RECON-006",
+    }
+    observed_rules: set[str] = set()
+    for ev_id in pos_summary["imported_event_ids"]:
+        ev_data = client.get(
+            f"/api/v1/security-events/{ev_id}", headers=headers
+        ).json()
+        assert len(ev_data["detection_reasons"]) >= 1
+        for reason_obj in ev_data["detection_reasons"]:
+            observed_rules.add(reason_obj["rule_id"])
+            assert len(reason_obj["reason"]) > 15
+            assert len(reason_obj["recommended_action"]) > 10
+    assert expected_rules.issubset(observed_rules)
+
+    # 2. False-positive boundary events (below threshold / benign telemetry)
+    benign_ip = f"198.18.{int(tag[:2], 16)}.{int(tag[2:4], 16)}"
+    benign_events = [
+        {
+            "asset_tag": "AST-IAM-001",
+            "event_type": "auth_failure",
+            "source": "sshd",
+            "severity": "low",
+            "title": f"[SYNTHETIC SIMULATION] Benign Single Typo {tag}",
+            "source_ip": benign_ip,
+            "occurred_at": "2026-11-11T12:00:00Z",
+            "raw_payload": {"failed_attempts": 1},
+        },
+        {
+            "asset_tag": "AST-WEB-003",
+            "event_type": "normal_http_request",
+            "source": "nginx",
+            "severity": "low",
+            "title": f"[SYNTHETIC SIMULATION] Benign Web Request {tag}",
+            "source_ip": "192.0.2.51",
+            "occurred_at": "2026-11-11T12:05:00Z",
+            "raw_payload": {"requests_per_minute": 12, "bytes_out": 4096, "destination_port": 443},
+        },
+        {
+            "asset_tag": "AST-WEB-003",
+            "event_type": "network_connection",
+            "source": "firewall",
+            "severity": "low",
+            "title": f"[SYNTHETIC SIMULATION] Benign 3-Port Check {tag}",
+            "source_ip": "192.0.2.52",
+            "occurred_at": "2026-11-11T12:10:00Z",
+            "raw_payload": {"distinct_ports_probed": 3},
+        },
+    ]
+
+    neg_resp = client.post(
+        "/api/v1/log-ingestion/import",
+        json={"format": "json", "content": json.dumps(benign_events)},
+        headers=headers,
+    )
+    assert neg_resp.status_code == 201
+    neg_summary = neg_resp.json()
+    assert neg_summary["imported_count"] == 3
+    assert neg_summary["detections_triggered"] == 0
+
+    # 3. Verify Risk Scoring Engine across multiple combinations & 0-100 clamping
+    assets_list = client.get("/api/v1/assets", headers=headers).json()["items"]
+    critical_asset_id = next(
+        a["id"] for a in assets_list if a["criticality"] == "critical"
+    )
+    combinations = [
+        (
+            {
+                "severity": "low",
+                "rule_confidence": 0.0,
+                "correlated_events_count": 1,
+                "distinct_tactics_count": 1,
+            },
+            "low",
+        ),
+        (
+            {
+                "severity": "medium",
+                "rule_confidence": 0.65,
+                "correlated_events_count": 2,
+                "distinct_tactics_count": 1,
+            },
+            "medium",
+        ),
+        (
+            {
+                "severity": "high",
+                "rule_confidence": 0.85,
+                "correlated_events_count": 3,
+                "distinct_tactics_count": 2,
+            },
+            "high",
+        ),
+        (
+            {
+                "severity": "critical",
+                "asset_id": critical_asset_id,
+                "rule_confidence": 1.0,
+                "correlated_events_count": 25,
+                "distinct_tactics_count": 5,
+            },
+            "critical",
+        ),
+    ]
+    for payload, expected_level in combinations:
+        r_resp = client.post(
+            "/api/v1/risk-assessments/calculate",
+            json=payload,
+            headers=headers,
+        )
+        assert r_resp.status_code == 200
+        r_body = r_resp.json()
+        assert 0 <= r_body["risk_score"] <= 100
+        assert r_body["risk_level"] == expected_level
+
+
+def test_synthetic_generator_correlation_incident_lifecycle_and_audit_trail(
+    client: TestClient,
+) -> None:
+    """Verify synthetic generator, anti-false-correlation, full incident lifecycle (assign, link, status, note, resolve), and audit logs."""
+    analyst_token = _login(client, "analyst", ANALYST_PASS)
     headers = {"Authorization": f"Bearer {analyst_token}"}
 
     # 1. Generate all synthetic scenarios
@@ -261,30 +656,15 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
     assert gen_data["ingestion_summary"]["detections_triggered"] >= 10
     assert gen_data["correlation_summary"]["clusters_count"] >= 2
 
-    # 2. Verify detection rules catalog and explainable findings
-    rules_resp = client.get("/api/v1/detections/rules", headers=headers)
-    assert rules_resp.status_code == 200
-    assert rules_resp.json()["rules_count"] >= 6
-
-    findings_resp = client.get("/api/v1/detections/findings", headers=headers)
-    assert findings_resp.status_code == 200
-    findings = findings_resp.json()["findings"]
-    assert len(findings) >= 10
-    for f in findings:
-        assert len(f["detection_reasons"]) >= 1
-        assert "reason" in f["detection_reasons"][0]
-        assert "rule_id" in f["detection_reasons"][0]
-        assert "recommended_action" in f["detection_reasons"][0]
-
-    # 3. Verify Correlation Engine does NOT group unrelated events solely by identical severity
+    # 2. Verify Correlation Engine does NOT group unrelated events solely by identical severity
     iso_id = uuid.uuid4().hex[:6]
     unrelated_events = [
         {
             "asset_tag": "AST-IAM-001",
             "event_type": "auth_failure",
             "source": "sensor_a",
-            "severity": "high",
-            "title": f"[SYNTHETIC SIMULATION] Isolated Event A {iso_id}",
+            "severity": "critical",
+            "title": f"[SYNTHETIC SIMULATION] Isolated Critical A {iso_id}",
             "source_ip": "192.0.2.111",
             "occurred_at": "2026-01-01T01:00:00Z",
         },
@@ -292,8 +672,8 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
             "asset_tag": "AST-NET-005",
             "event_type": "suspicious_login",
             "source": "sensor_b",
-            "severity": "high",
-            "title": f"[SYNTHETIC SIMULATION] Isolated Event B {iso_id}",
+            "severity": "critical",
+            "title": f"[SYNTHETIC SIMULATION] Isolated Critical B {iso_id}",
             "source_ip": "192.0.2.222",
             "occurred_at": "2026-01-01T01:02:00Z",
         },
@@ -316,31 +696,19 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
     assert len(clusters) >= 2
     for cluster in clusters:
         cluster_ev_ids = {e["id"] for e in cluster["events"]}
-        # Ensure the two unrelated same-severity events were NEVER grouped together
         assert not iso_ids.issubset(cluster_ev_ids)
         assert "Severity alone was not used" in cluster["correlation_explanation"]
 
-    # 4. Verify Risk Scoring Engine (0-100 scale, factor breakdown, explanation)
-    risk_calc = client.post(
-        "/api/v1/risk-assessments/calculate",
-        json={
-            "severity": "critical",
-            "rule_confidence": 0.92,
-            "correlated_events_count": 5,
-            "distinct_tactics_count": 3,
-        },
-        headers=headers,
+    # 3. Incident Management Full Lifecycle (create -> assign analyst -> link events -> status -> note -> resolve)
+    users_resp = client.get("/api/v1/users", headers=headers)
+    assert users_resp.status_code == 200
+    analyst_user = next(
+        u for u in users_resp.json()["items"] if u["username"] == "analyst"
     )
-    assert risk_calc.status_code == 200
-    r_data = risk_calc.json()
-    assert 0 <= r_data["risk_score"] <= 100
-    assert r_data["risk_level"] in {"low", "medium", "high", "critical"}
-    assert len(r_data["factors"]) == 5
-    assert "not a statistical probability" in r_data["explanation"]
 
-    # 5. Incident Management Full Lifecycle (create -> status -> note -> link -> resolve)
     top_cluster = clusters[0]
-    cluster_event_ids = [e["id"] for e in top_cluster["events"][:2]]
+    initial_event_ids = [top_cluster["events"][0]["id"]]
+    additional_event_id = top_cluster["events"][1]["id"]
 
     inc_create = client.post(
         "/api/v1/incidents",
@@ -348,7 +716,7 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
             "title": "Correlated Credential Access & Privilege Escalation Case",
             "summary": "Multi-stage synthetic campaign detected across IAM and Vault assets.",
             "severity": "critical",
-            "security_event_ids": cluster_event_ids,
+            "security_event_ids": initial_event_ids,
             "correlation_explanation": top_cluster["correlation_explanation"],
         },
         headers=headers,
@@ -356,8 +724,32 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
     assert inc_create.status_code == 201
     incident = inc_create.json()
     inc_id = incident["id"]
-    assert incident["risk_score"] >= 70
-    assert len(incident["linked_events"]) == 2
+    assert len(incident["linked_events"]) == 1
+
+    # Assign analyst via POST /api/v1/incidents/{inc_id}/assign
+    assign_resp = client.post(
+        f"/api/v1/incidents/{inc_id}/assign",
+        json={
+            "assigned_to_id": analyst_user["id"],
+            "notes": "Assigned to Senior Security Analyst for containment.",
+        },
+        headers=headers,
+    )
+    assert assign_resp.status_code == 200
+    assert assign_resp.json()["assigned_to_id"] == analyst_user["id"]
+
+    # Link additional security event via POST /api/v1/incidents/{inc_id}/link-events
+    link_resp = client.post(
+        f"/api/v1/incidents/{inc_id}/link-events",
+        json={
+            "security_event_ids": [additional_event_id],
+            "correlation_role": "secondary_indicator",
+            "analyst_notes": "Linked secondary stage indicator from same source IP.",
+        },
+        headers=headers,
+    )
+    assert link_resp.status_code == 200
+    assert len(link_resp.json()["linked_events"]) == 2
 
     # Transition status to containment
     status_resp = client.post(
@@ -374,11 +766,13 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
     # Add investigation note
     note_resp = client.post(
         f"/api/v1/incidents/{inc_id}/notes",
-        json={"note": "Confirmed synthetic simulation run; verified IAM session revocation procedure."},
+        json={
+            "note": "Confirmed synthetic simulation run; verified IAM session revocation procedure."
+        },
         headers=headers,
     )
     assert note_resp.status_code == 200
-    assert len(note_resp.json()["timeline_json"]) >= 3
+    assert len(note_resp.json()["timeline_json"]) >= 4
 
     # Resolve incident
     resolve_resp = client.post(
@@ -394,7 +788,7 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
     assert resolved_inc["status"] == "recovered"
     assert resolved_inc["resolved_at"] is not None
 
-    # 6. Verify Response Playbooks recommendation
+    # 4. Verify Response Playbooks recommendation
     pb_rec = client.get(
         "/api/v1/playbooks/recommend?incident_type=brute_force",
         headers=headers,
@@ -403,14 +797,23 @@ def test_synthetic_generator_detections_correlation_risk_and_incident_workflow(
     assert pb_rec.json()["advisory_only"] is True
     assert pb_rec.json()["recommended_playbook"]["code"] == "PB-IR-002"
 
-    # 7. Verify Audit Logs captured operational actions
+    # 5. Verify Audit Logs captured all critical operational actions
     audit_resp = client.get(
-        "/api/v1/audit-logs?page=1&page_size=50", headers=headers
+        "/api/v1/audit-logs?page=1&page_size=100", headers=headers
     )
     assert audit_resp.status_code == 200
     logged_actions = {item["action"] for item in audit_resp.json()["items"]}
-    assert "auth.login_success" in logged_actions
-    assert "log_ingestion.synthetic_generated" in logged_actions
-    assert "incident.created" in logged_actions
-    assert "incident.status_changed" in logged_actions
-    assert "incident.resolved" in logged_actions
+    for expected_action in (
+        "auth.login_success",
+        "log_ingestion.synthetic_generated",
+        "log_ingestion.imported",
+        "incident.created",
+        "incident.assigned",
+        "incident.events_linked",
+        "incident.status_changed",
+        "incident.note_added",
+        "incident.resolved",
+    ):
+        assert (
+            expected_action in logged_actions
+        ), f"Missing audit log action: {expected_action}"

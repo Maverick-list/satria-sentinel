@@ -100,7 +100,11 @@ def create_access_token(
     """Create a signed HS256 JWT access token."""
     settings = get_settings()
     now = datetime.now(timezone.utc)
-    ttl_minutes = expires_minutes or settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    ttl_minutes = (
+        expires_minutes
+        if expires_minutes is not None
+        else settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    )
     expires_at = now + timedelta(minutes=ttl_minutes)
     jti = str(uuid.uuid4())
 

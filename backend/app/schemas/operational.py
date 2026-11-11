@@ -210,8 +210,8 @@ class PaginatedSecurityEventsResponse(BaseModel):
 class LogImportPayloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    format: Literal["csv", "json"]
-    content: str = Field(..., min_length=2)
+    format: str = Field(..., min_length=1, max_length=32)
+    content: str = Field(default="")
     filename: str | None = Field(default=None, max_length=255)
 
 
