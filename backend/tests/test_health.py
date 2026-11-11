@@ -26,7 +26,7 @@ def test_health_endpoint_returns_valid_schema_and_no_sensitive_data(
     serialized = response.text.lower()
     assert "postgresql+psycopg" not in serialized
     assert "password" not in serialized
-    assert "satria_local_dev_pw" not in serialized
+    assert "database_url" not in serialized
 
     # Verify security headers
     assert response.headers.get("X-Content-Type-Options") == "nosniff"

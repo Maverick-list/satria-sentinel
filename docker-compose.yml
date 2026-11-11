@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-satria_dev}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-satria_local_dev_pw_2026}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-satria_sentinel_db}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -39,7 +39,7 @@ services:
       APP_VERSION: ${APP_VERSION:-0.1.0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-satria_dev}:${POSTGRES_PASSWORD:-satria_local_dev_pw_2026}@db:5432/${POSTGRES_DB:-satria_sentinel_db}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-satria_dev}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-satria_sentinel_db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     ports:
       - "${BACKEND_PORT:-8000}:8000"

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = Field(default=8000, ge=1, le=65535)
 
     DATABASE_URL: str = Field(
-        default="postgresql+psycopg://satria_dev:satria_local_dev_pw_2026@localhost:5432/satria_sentinel_db"
+        default="postgresql+psycopg://satria_dev:CHANGE_ME_LOCAL_DEV_PASSWORD@localhost:5432/satria_sentinel_db"
     )
 
     CORS_ORIGINS: str = Field(default="http://localhost:3000,http://127.0.0.1:3000")
