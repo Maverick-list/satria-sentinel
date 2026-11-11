@@ -303,6 +303,7 @@ class IncidentStatusChangeRequest(BaseModel):
         "open",
         "investigating",
         "containment",
+        "contained",
         "eradication",
         "recovered",
         "closed",

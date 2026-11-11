@@ -32,6 +32,7 @@ export type IncidentStatus =
   | "open"
   | "investigating"
   | "containment"
+  | "contained"
   | "eradication"
   | "recovered"
   | "closed";

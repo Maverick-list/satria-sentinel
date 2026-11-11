@@ -817,3 +817,141 @@ def test_synthetic_generator_correlation_incident_lifecycle_and_audit_trail(
         assert (
             expected_action in logged_actions
         ), f"Missing audit log action: {expected_action}"
+
+
+def test_incident_complete_lifecycle_open_investigating_contained_closed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify complete incident lifecycle: open -> investigating -> contained -> closed with persistence, root cause, timeline, audit logs, and RBAC restrictions."""
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-at-least-32-chars-long!")
+
+    analyst_token = _login(client, "analyst", ANALYST_PASS)
+    viewer_token = _login(client, "viewer", VIEWER_PASS)
+    analyst_headers = {"Authorization": f"Bearer {analyst_token}"}
+    viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
+
+    # 1. Create incident as analyst (initial status: open)
+    create_resp = client.post(
+        "/api/v1/incidents",
+        json={
+            "title": "Lifecycle Verification Incident: Unauthorized C2 Channel",
+            "summary": "Telemetry indicates potential data beaconing activity.",
+            "severity": "high",
+        },
+        headers=analyst_headers,
+    )
+    assert create_resp.status_code == 201
+    inc_data = create_resp.json()
+    inc_id = inc_data["id"]
+    assert inc_data["status"] == "open"
+    assert inc_data["resolved_at"] is None
+
+    # 2. Verify unauthorized role (viewer) cannot transition status
+    viewer_attempt = client.post(
+        f"/api/v1/incidents/{inc_id}/status",
+        json={"status": "investigating", "notes": "Viewer attempt"},
+        headers=viewer_headers,
+    )
+    assert viewer_attempt.status_code == 403
+
+    # 3. Transition status: open -> investigating (analyst)
+    inv_resp = client.post(
+        f"/api/v1/incidents/{inc_id}/status",
+        json={
+            "status": "investigating",
+            "notes": "Analyst initiated forensic triage and egress packet capture.",
+        },
+        headers=analyst_headers,
+    )
+    assert inv_resp.status_code == 200
+    assert inv_resp.json()["status"] == "investigating"
+
+    # 4. Verify viewer cannot add notes
+    viewer_note = client.post(
+        f"/api/v1/incidents/{inc_id}/notes",
+        json={"note": "Viewer note attempt"},
+        headers=viewer_headers,
+    )
+    assert viewer_note.status_code == 403
+
+    # 5. Analyst appends investigation note
+    note_resp = client.post(
+        f"/api/v1/incidents/{inc_id}/notes",
+        json={"note": "Egress flow telemetry confirmed anomalous port 4444 traffic."},
+        headers=analyst_headers,
+    )
+    assert note_resp.status_code == 200
+
+    # 6. Transition status: investigating -> contained (analyst)
+    cont_resp = client.post(
+        f"/api/v1/incidents/{inc_id}/status",
+        json={
+            "status": "contained",
+            "notes": "Border firewall ACL applied; malicious destination IP blocked.",
+        },
+        headers=analyst_headers,
+    )
+    assert cont_resp.status_code == 200
+    assert cont_resp.json()["status"] == "contained"
+
+    # 7. Verify viewer cannot resolve incident
+    viewer_resolve = client.post(
+        f"/api/v1/incidents/{inc_id}/resolve",
+        json={
+            "root_cause_notes": "Attempted resolution by viewer",
+            "resolution_status": "closed",
+        },
+        headers=viewer_headers,
+    )
+    assert viewer_resolve.status_code == 403
+
+    # 8. Verify root cause is required (short or missing root_cause_notes is rejected)
+    short_resolve = client.post(
+        f"/api/v1/incidents/{inc_id}/resolve",
+        json={
+            "root_cause_notes": "tiny",
+            "resolution_status": "closed",
+        },
+        headers=analyst_headers,
+    )
+    assert short_resolve.status_code == 422
+
+    # 9. Resolve incident with resolution_status='closed' and comprehensive root cause
+    root_cause = "Outbound connection initiated by misconfigured diagnostic container. Service quarantined and credentials revoked."
+    resolve_resp = client.post(
+        f"/api/v1/incidents/{inc_id}/resolve",
+        json={
+            "root_cause_notes": root_cause,
+            "resolution_status": "closed",
+        },
+        headers=analyst_headers,
+    )
+    assert resolve_resp.status_code == 200
+    resolved_data = resolve_resp.json()
+    assert resolved_data["status"] == "closed"
+    assert resolved_data["resolved_at"] is not None
+    assert resolved_data["root_cause_notes"] == root_cause
+
+    # 10. Verify persistence via direct GET /api/v1/incidents/{inc_id}
+    fetch_resp = client.get(f"/api/v1/incidents/{inc_id}", headers=analyst_headers)
+    assert fetch_resp.status_code == 200
+    persisted = fetch_resp.json()
+    assert persisted["status"] == "closed"
+    assert persisted["root_cause_notes"] == root_cause
+    assert persisted["resolved_at"] is not None
+
+    # 11. Verify incident timeline contains all status changes and entries
+    timeline_titles = [entry["title"] for entry in persisted["timeline_json"]]
+    assert any("open -> investigating" in t for t in timeline_titles)
+    assert any("investigation note added" in t.lower() for t in timeline_titles)
+    assert any("investigating -> contained" in t for t in timeline_titles)
+    assert any("incident resolved" in t.lower() for t in timeline_titles)
+
+    # 12. Verify audit trail captures the actions
+    audit_resp = client.get("/api/v1/audit-logs?page=1&page_size=50", headers=analyst_headers)
+    assert audit_resp.status_code == 200
+    logged_actions = {item["action"] for item in audit_resp.json()["items"]}
+    assert "incident.status_changed" in logged_actions
+    assert "incident.note_added" in logged_actions
+    assert "incident.resolved" in logged_actions
+

@@ -63,6 +63,7 @@ class IncidentStatus(StrEnum):
     OPEN = "open"
     INVESTIGATING = "investigating"
     CONTAINMENT = "containment"
+    CONTAINED = "contained"
     ERADICATION = "eradication"
     RECOVERED = "recovered"
     CLOSED = "closed"
