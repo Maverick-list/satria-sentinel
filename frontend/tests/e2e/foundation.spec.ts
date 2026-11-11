@@ -227,7 +227,7 @@ test.describe("SATRIA SENTINEL — Phase 3 Command Center & Operational Workflow
     }
   });
 
-  test("4. Complete 14-Step Repeatable Demonstration Scenario & Zero Console/Page Errors", async ({
+  test("4. Complete 18-Step Repeatable Demonstration Scenario & Zero Console/Page Errors", async ({
     page,
   }) => {
     const pageErrors: string[] = [];
@@ -235,7 +235,7 @@ test.describe("SATRIA SENTINEL — Phase 3 Command Center & Operational Workflow
       pageErrors.push(err.message);
     });
 
-    // Step 1 & 2: Log in as security_analyst and view Command Center Dashboard
+    // Step 1: Authenticate as security_analyst
     await page.goto("/");
     await expect(page.getByTestId("active-user-indicator")).toBeVisible({
       timeout: 10000,
@@ -247,37 +247,109 @@ test.describe("SATRIA SENTINEL — Phase 3 Command Center & Operational Workflow
       "analyst",
       { timeout: 10000 }
     );
+    await expect(page.getByTestId("active-role-badge")).toContainText(
+      "security_analyst"
+    );
+
+    // Step 2: Inspect dashboard KPIs & priority attention section
+    await expect(page.getByTestId("health-status-badge")).toContainText(
+      "Operational (Healthy)"
+    );
     await expect(page.getByTestId("analyst-priority-section")).toBeVisible();
+    await expect(page.getByTestId("asset-risk-overview")).toBeVisible();
 
     // Step 3: Inspect monitored assets & criticality context
     await page.getByTestId("nav-link-assets").click();
+    await expect(page.getByTestId("page-heading")).toContainText(
+      "Assets Inventory"
+    );
     await expect(page.getByTestId("asset-detail-inspector")).toContainText(
       "Why It Matters",
       { timeout: 10000 }
     );
 
-    // Step 4, 5, 6, 7: Generate synthetic events, review detections, review correlation, inspect risk score
+    // Step 4: Generate or ingest synthetic logs
     await page.getByTestId("nav-link-security-events").click();
+    await expect(page.getByTestId("page-heading")).toContainText(
+      "Security Events"
+    );
     await page
       .getByTestId("synthetic-scenario-select")
       .selectOption("privilege_escalation");
     await page.getByTestId("generate-scenario-btn").click();
-    await expect(page.getByTestId("event-explanation-panel")).toContainText(
-      "Risk Score Calculation",
+
+    // Step 5: Verify ingestion results
+    await expect(page.getByTestId("import-summary-box")).toContainText(
+      "Ingestion Summary",
       { timeout: 10000 }
     );
 
-    // Step 8, 9, 10, 11, 12, 13: Open incident, inspect evidence, assign analyst, add note, consult playbook, resolve incident
+    // Step 6: Trigger deterministic detection rules
+    await page.getByTestId("run-detection-correlation-btn").click();
+
+    // Step 7: Inspect detection explanations & supporting evidence
+    await expect(page.getByTestId("event-explanation-panel")).toContainText(
+      "Matched Detection Rules",
+      { timeout: 10000 }
+    );
+    await expect(page.getByTestId("event-explanation-panel")).toContainText(
+      "Supporting Telemetry Evidence"
+    );
+
+    // Step 8: Inspect event correlation
+    await expect(page.getByText("Correlated Event Clusters")).toBeVisible();
+
+    // Step 9: Review risk score factors
+    await expect(page.getByTestId("event-explanation-panel")).toContainText(
+      "Risk Score Calculation"
+    );
+
+    // Step 10: Create or open an incident
     await page.getByTestId("nav-link-incidents").click();
-    await expect(page.getByTestId("incident-workspace-panel")).toBeVisible({
-      timeout: 10000,
-    });
+    await expect(page.getByTestId("page-heading")).toContainText("Incidents");
+    const incidentCard = page.locator('[data-testid^="incident-card-"]').first();
+    await expect(incidentCard).toBeVisible({ timeout: 10000 });
+    await incidentCard.click();
+    await expect(page.getByTestId("incident-workspace-panel")).toBeVisible();
+
+    // Step 11: Link related security events (verify linked events or link form)
+    await expect(
+      page.getByText("Correlated Security Events")
+    ).toBeVisible();
+
+    // Step 12: Assign the incident
+    await expect(page.getByTestId("incident-assign-submit")).toBeVisible();
+    await page.getByTestId("incident-assign-submit").click();
+
+    // Step 13: Add an investigation note
+    await page
+      .getByTestId("incident-note-input")
+      .fill("Phase 4 validation: telemetry and containment validated by analyst.");
+    await page.getByTestId("incident-note-submit").click();
+
+    // Step 14: Consult the recommended playbook
     await expect(page.getByTestId("incident-playbook-guidance")).toContainText(
       "Recommended Playbook:"
     );
 
-    // Step 14: Verify action in Audit Logs
+    // Step 15: Update the incident status to containment
+    await page.getByTestId("incident-status-btn-containment").click();
+
+    // Step 16: Resolve the incident
+    await page
+      .getByTestId("incident-resolve-input")
+      .fill("Phase 4 incident resolution: synthetic activity verified and contained.");
+    await page.getByTestId("incident-resolve-submit").click();
+
+    // Step 17: Verify the incident timeline
+    await expect(page.getByTestId("incident-timeline-list")).toContainText(
+      "incident_resolved",
+      { timeout: 10000 }
+    );
+
+    // Step 18: Verify corresponding audit records
     await page.getByTestId("nav-link-audit-logs").click();
+    await expect(page.getByTestId("page-heading")).toContainText("Audit Logs");
     await expect(page.getByTestId("audit-logs-table")).toContainText(
       "@analyst",
       { timeout: 10000 }
