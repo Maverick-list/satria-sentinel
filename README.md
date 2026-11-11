@@ -1,126 +1,73 @@
 # SATRIA SENTINEL
 
 **Security Asset & Threat Response Intelligence Assistant**  
-*Defensive Cybersecurity Platform — Kartika Cyber Hackathon 2026 (Phase 1 Foundation)*
+*Defensive Cybersecurity Operations Prototype — Kartika Cyber Hackathon 2026 (Phase 1 & Phase 2 Complete)*
 
 ---
 
-## 1. Overview
+## 1. Gambaran Umum Proyek
 
-**SATRIA SENTINEL** adalah platform operasional keamanan siber defensif (*defensive cybersecurity command center*) yang dirancang untuk:
-1. **Monitoring Aset Digital (`Assets`)** — inventarisasi infrastruktur, klasifikasi kritikalitas, status operasional, dan pemetaan pemilik aset.
-2. **Deteksi Indikasi Ancaman (`SecurityEvents`)** — pencatatan telemetri keamanan sintetis, klasifikasi taktik/teknik MITRE ATT&CK, dan antrean triase analis.
-3. **Analisis Risiko & Pengelolaan Insiden (`Incidents` & `IncidentEvents`)** — korelasi banyak event keamanan menjadi kasus insiden terstruktur dengan *risk score* dan *root-cause notes*.
-4. **Orkestrasi Respons Defensif (`ResponsePlaybooks`)** — panduan prosedur standar (*containment*, *eradication*, *recovery*) berbasis *checklist* terversi.
-5. **Akuntabilitas Operasional (`AuditLogs`)** — rekam jejak audit atas setiap tindakan operator dan perubahan status sistem.
+**SATRIA SENTINEL** adalah platform komando keamanan siber defensif yang dirancang untuk membantu tim SOC (*Security Operations Center*) dalam memantau inventaris aset digital, mengimpor dan memvalidasi log keamanan, mendeteksi indikasi ancaman menggunakan aturan deterministik yang transparan, mengorelasikan kejadian terkait, menghitung indeks prioritas risiko (`0–100`), mengelola siklus hidup insiden, serta menyajikan rekomendasi *Response Playbooks* dan *Audit Trail* terpusat.
 
-> **Status Proyek Saat Ini (Phase 1):**  
-> Fondasi arsitektur modular, skema database PostgreSQL (7 tabel inti beserta relasi & indeks), migrasi Alembic, REST API `/api/v1/health` pada FastAPI, *centralized error handling*, *structured JSON logging*, serta UI Command Center berbasis Next.js App Router (7 halaman utama + integrasi *live health telemetry*) telah selesai diimplementasikan dan diverifikasi.
-
----
-
-## 2. Technology Stack (Actual Verified Versions)
-
-| Layer | Technology | Version |
-| :--- | :--- | :--- |
-| **Frontend Framework** | Next.js (App Router) | `15.5.29` |
-| **Frontend UI Library** | React / React DOM | `19.3.1` |
-| **Frontend Language** | TypeScript | `5.9.3` |
-| **UI & Styling** | Tailwind CSS + shadcn/ui + Lucide Icons | `3.4.19` / `0.475.0` |
-| **Data Visualization** | Recharts | `2.15.4` |
-| **Backend Framework** | FastAPI (Python `3.14.4` local / `3.12` container) | `0.162.4` |
-| **Validation & Settings** | Pydantic / Pydantic Settings | `2.14.3` / `2.16.2` |
-| **ORM & Database Migration** | SQLAlchemy / Alembic | `2.1.8` / `1.20.1` |
-| **PostgreSQL Driver** | Psycopg v3 (`psycopg[binary]`) | `3.3.8` |
-| **Database Engine** | PostgreSQL | `16-alpine` (`16.13`) |
-| **Testing & QA** | Pytest + HTTPX (Backend), Playwright (E2E) | `9.2.0` / `0.28.1` / `1.65.0` |
-| **Containerization** | Docker (`29.9.2`) & Docker Compose (`v5.6.1`) | Compose v2 spec |
+### Fitur Utama (Phase 1 & Phase 2)
+1. **Authentication & RBAC (`/api/v1/auth`, `/api/v1/users`)**: Autentikasi JWT HS256, *password hashing* `scrypt` (RFC 7914), pencabutan token saat *logout*, dan kontrol akses berbasis peran (`admin`, `security_analyst`, `viewer`).
+2. **Asset Inventory Management (`/api/v1/assets`)**: CRUD inventaris aset digital beserta klasifikasi kritikalitas (`low`, `medium`, `high`, `critical`) dan lingkungan operasional.
+3. **Synthetic Security Log Generator (`/api/v1/log-ingestion/generate-synthetic`)**: Generator 6 skenario simulasi ancaman (`brute_force`, `suspicious_login`, `unusual_access`, `port_scanning`, `privilege_escalation`, `suspicious_outbound`) dengan penanda eksplisit `[SYNTHETIC SIMULATION]`.
+4. **Log Ingestion Engine (`/api/v1/log-ingestion/import`)**: Impor log CSV & JSON dengan validasi skema, sanitasi input (tanpa eksekusi kode/perintah), deteksi duplikat SHA-256 (`event_hash`), dan pelaporan error per baris.
+5. **Deterministic Threat Detection Engine (`/api/v1/detections`)**: 6 aturan deteksi deterministik (`SATRIA-RULE-BF-001` s/d `SATRIA-RULE-RECON-006`) yang terpetakan ke **MITRE ATT&CK** dan menyimpan alasan deteksi (`reason`) secara transparan tanpa klaim AI/ML palsu.
+6. **Multi-Factor Event Correlation Engine (`/api/v1/correlations`)**: Pengelompokan kejadian keamanan berdasarkan kesamaan aset target, IP sumber, rentang waktu, dan progresi rantai serangan disertai `correlation_explanation`.
+7. **Explainable Risk Scoring Engine (`/api/v1/risk-assessments`)**: Perhitungan skor prioritas risiko `0–100` berbasis 5 faktor berbobot dengan penjelasan rinci (*bukan probabilitas statistik*).
+8. **Incident Management, Advisory Playbooks & Audit Trail (`/api/v1/incidents`, `/api/v1/playbooks`, `/api/v1/audit-logs`)**: Siklus hidup penanganan insiden lengkap dengan lini masa investigasi, rekomendasi *playbook* defensif (`PB-IR-001` s/d `PB-IR-005`), dan pencatatan jejak audit imutabel.
 
 ---
 
-## 3. Repository Structure
+## 2. Tumpukan Teknologi (*Technology Stack*)
 
-```text
-satria-sentinel/
-├── backend/                  # FastAPI application, SQLAlchemy models, Alembic migrations, Pytest suite
-│   ├── alembic/              # Database migration environment and version scripts
-│   ├── app/
-│   │   ├── api/v1/           # Versioned API routers (/api/v1/health)
-│   │   ├── core/             # Environment config, structured JSON logging, centralized exceptions
-│   │   ├── db/               # SQLAlchemy 2.x DeclarativeBase, session & engine management
-│   │   ├── models/           # 7 foundational ORM entities + domain enums
-│   │   ├── repositories/     # Data access layer & database readiness probe
-│   │   ├── schemas/          # Pydantic v2 request/response schemas
-│   │   └── services/         # Application business & health orchestration services
-│   ├── tests/                # Pytest unit & integration tests
-│   ├── alembic.ini
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/                 # Next.js App Router TypeScript Command Center UI
-│   ├── src/
-│   │   ├── app/              # 7 App Router pages (/, /assets, /security-events, /incidents, /playbooks, /audit-logs, /settings)
-│   │   ├── components/       # shadcn/ui primitives & Command Center layout shell
-│   │   ├── features/         # Health telemetry panel, schema profile chart, module foundation view
-│   │   ├── hooks/            # React hooks (useBackendHealth)
-│   │   ├── lib/              # Tailwind class merger & formatting utilities
-│   │   ├── services/         # Typed HTTP client & backend health API service
-│   │   └── types/            # TypeScript contracts matching FastAPI schemas
-│   ├── tests/e2e/            # Playwright end-to-end verification specs
-│   ├── Dockerfile
-│   └── package.json
-├── docs/                     # Architectural, database, development, and security documentation
-├── infrastructure/           # PostgreSQL initialization scripts
-├── scripts/                  # Phase 1 automated verification script
-├── .env.example              # Safe environment variable template (no secrets)
-├── .gitignore
-├── docker-compose.yml        # Multi-container orchestration (db, backend, frontend)
-└── README.md
-```
+| Lapisan | Teknologi & Versi Terverifikasi |
+| :--- | :--- |
+| **Frontend** | Next.js `15.5.29` (App Router), React `19.0.0`, TypeScript `5.8.2`, Tailwind CSS `4.0.14`, Recharts `2.15.1`, Lucide Icons |
+| **Backend** | Python (`3.12` Docker / `3.14.4` Host), FastAPI `0.135.3`, Pydantic `2.12.5`, SQLAlchemy `2.0.35`, Alembic `1.13.3` |
+| **Database** | PostgreSQL `16-alpine` (7 tabel inti, migrasi Alembic `20261111_0002`) |
+| **Testing** | Pytest `9.2.0` (`8 passed`), Playwright `1.58.2` (`3 passed`) |
 
 ---
 
-## 4. Quick Start
+## 3. Cara Menjalankan Proyek
 
-### 4.1. Prepare Environment Configuration
-
+### A. Menggunakan Docker Compose
 ```bash
 cp .env.example .env
+docker compose up -d --build
 ```
 
-### 4.2. Option A — Hybrid Local Development (Recommended for Fast Iteration)
-
-1. **Jalankan PostgreSQL via Docker Compose:**
+### B. Menjalankan Secara Lokal (Host Development)
+1. **Jalankan PostgreSQL**:
    ```bash
    docker compose up -d db
    ```
-2. **Jalankan Migrasi Database & Backend FastAPI:**
+2. **Jalankan Migrasi & Server Backend (`:8000`)**:
    ```bash
    cd backend
    .venv/bin/alembic upgrade head
-   .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
-3. **Jalankan Frontend Next.js:**
+3. **Jalankan Server Frontend (`:3000`)**:
    ```bash
    cd frontend
-   npm run dev
+   npm run build && npm run start
    ```
-4. **Akses Aplikasi:**
-   - Command Center UI: `http://localhost:3000`
-   - Backend Health Endpoint: `http://localhost:8000/api/v1/health`
-   - OpenAPI Swagger Docs: `http://localhost:8000/api/v1/docs`
-
-### 4.3. Option B — Full Docker Compose Stack
-
-```bash
-docker compose up --build -d
-```
 
 ---
 
-## 5. Documentation Index
+## 4. Dokumentasi Lengkap (`docs/`)
 
-- [Project Overview](docs/PROJECT_OVERVIEW.md)
-- [Architecture Specification](docs/ARCHITECTURE.md)
-- [Database Design & ERD](docs/DATABASE_DESIGN.md)
-- [Development & Testing Guide](docs/DEVELOPMENT_GUIDE.md)
-- [Security Baseline](docs/SECURITY_BASELINE.md)
+- [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) — Tujuan produk dan cakupan Phase 1 & Phase 2.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Arsitektur modular *frontend*, *backend*, dan database.
+- [`docs/DATABASE_DESIGN.md`](docs/DATABASE_DESIGN.md) — Skema 7 tabel PostgreSQL, relasi, dan indeks.
+- [`docs/DETECTION_METHODOLOGY.md`](docs/DETECTION_METHODOLOGY.md) — Katalog 6 aturan deteksi deterministik, pemetaan MITRE ATT&CK, dan metodologi korelasi.
+- [`docs/RISK_SCORING.md`](docs/RISK_SCORING.md) — Formula skor risiko `0–100`, bobot 5 faktor, dan kategori tingkat risiko.
+- [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md) — Spesifikasi seluruh *endpoint* `/api/v1` dan matriks RBAC.
+- [`docs/SYNTHETIC_DATA_GUIDE.md`](docs/SYNTHETIC_DATA_GUIDE.md) — Panduan generator skenario simulasi dan format impor CSV/JSON.
+- [`docs/SECURITY_BASELINE.md`](docs/SECURITY_BASELINE.md) — Kontrol keamanan autentikasi, sanitasi input, CORS, dan *secret hygiene*.
+- [`docs/DEVELOPMENT_GUIDE.md`](docs/DEVELOPMENT_GUIDE.md) — Panduan lingkungan kerja dan konvensi pengembangan.
+- [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md) — Laporan hasil eksekusi pengujian Pytest dan Playwright E2E.

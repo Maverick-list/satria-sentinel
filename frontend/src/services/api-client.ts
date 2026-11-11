@@ -1,6 +1,8 @@
 import type { ApiErrorEnvelope } from "@/types/api";
 
 const DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1";
+export const AUTH_TOKEN_STORAGE_KEY = "satria_sentinel_jwt_v2";
+export const AUTH_USER_STORAGE_KEY = "satria_sentinel_user_v2";
 
 export function getApiBaseUrl(): string {
   const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
@@ -8,6 +10,13 @@ export function getApiBaseUrl(): string {
     return DEFAULT_API_BASE_URL;
   }
   return configured.replace(/\/+$/, "");
+}
+
+export function getStoredToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
 export class ApiClientError extends Error {
@@ -45,11 +54,20 @@ export async function apiFetch<T>(
     headers.set("Content-Type", "application/json");
   }
 
+  const token = getStoredToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
   const response = await fetch(url, {
     ...options,
     headers,
     cache: "no-store",
   });
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
 
   const contentType = response.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");

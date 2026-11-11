@@ -1,41 +1,33 @@
-# SATRIA SENTINEL — Security Baseline (Phase 1)
+# SATRIA SENTINEL — Security Baseline & Defensive Controls
 
-Dokumen ini mencatat kontrol keamanan dasar yang telah diimplementasikan secara nyata pada **Phase 1**.
+## 1. Autentikasi, Kriptografi Password, dan Manajemen Sesi
 
----
+Implementasi kode sumber: [`backend/app/core/security.py`](../backend/app/core/security.py) dan [`backend/app/api/deps.py`](../backend/app/api/deps.py).
 
-## 1. Secret & Configuration Management
-
-- **Zero Hardcoded Secrets**: Tidak ada password produksi, API key, atau token rahasia yang disimpan di dalam kode sumber.
-- **Environment Variable Validation**: Seluruh konfigurasi dibaca melalui `app/core/config.py` menggunakan `pydantic-settings`.
-- **Git Ignore Protection**: File `.env`, `.env.local`, dan direktori volume database telah didaftarkan di `.gitignore`.
-- **Template `.env.example`**: Disediakan dengan nilai *placeholder* yang jelas (`CHANGE_ME_LOCAL_DEV_PASSWORD`).
-
----
-
-## 2. API & Backend Security Controls
-
-1. **Strict Input Validation**:
-   - Setiap query parameter dan payload divalidasi oleh Pydantic v2 (`ConfigDict(extra="forbid")`).
-   - Input yang tidak valid langsung ditolak dengan status HTTP `422 Unprocessable Entity` dan kode `VALIDATION_ERROR`.
-2. **Centralized Exception Handling (No Stack-Trace Leakage)**:
-   - Diimplementasikan pada `backend/app/core/exceptions.py`.
-   - Error internal (`Exception`) dicatat secara lengkap ke log server terstruktur namun hanya mengembalikan pesan aman beserta `request_id` ke klien.
-   - Endpoint `GET /api/v1/health` tidak pernah membocorkan `DATABASE_URL`, username, atau password database meskipun koneksi database terputus.
-3. **Environment-Driven CORS Policy**:
-   - Origin yang diizinkan dibaca dari variabel `CORS_ORIGINS` (bukan wildcard `*` bebas).
-   - Metode HTTP dan header dibatasi secara eksplisit (`Authorization`, `Content-Type`, `X-Request-ID`).
-4. **Defensive HTTP Response Headers**:
-   - Middleware pada `backend/app/main.py` menyematkan header berikut pada setiap respons:
-     - `X-Content-Type-Options: nosniff`
-     - `X-Frame-Options: DENY`
-     - `Referrer-Policy: strict-origin-when-cross-origin`
-     - `X-Request-ID: <uuid>`
-   - Di sisi frontend (`next.config.mjs`), header `X-Powered-By` dinonaktifkan (`poweredByHeader: false`).
+- **Password Hashing (`scrypt`)**: Seluruh password pengguna disimpan menggunakan algoritma derivasi kunci **RFC 7914 `scrypt`** (`n=16384, r=8, p=1, dklen=64`) dengan *random cryptographic salt* 16-byte per pengguna dan perbandingan waktu konstan (`hmac.compare_digest`). Tidak ada password yang disimpan dalam bentuk *plaintext*.
+- **JSON Web Token (HS256) & Revokasi Logout**:
+  - Token akses ditandatangani menggunakan `HMAC-SHA256` (`HS256`) dengan klaim `sub` (User UUID), `username`, `role`, `iat`, `exp`, dan `jti` unik.
+  - Saat pengguna memanggil `POST /api/v1/auth/logout`, nilai `jti` dicatat ke dalam registri pencabutan token (*revocation registry*) sehingga token tersebut langsung ditolak pada permintaan berikutnya meskipun belum melewati waktu kedaluwarsa (`exp`).
+- **Role-Based Access Control (RBAC)**:
+  - `admin`: Hak akses penuh termasuk pembuatan pengguna dan penghapusan aset.
+  - `security_analyst`: Hak akses operasional penuh untuk registrasi/pembaruan aset, impor log, generator sintetis, eksekusi mesin deteksi/korelasi/risiko, dan manajemen insiden.
+  - `viewer`: Hak akses baca saja (*read-only*) untuk pemantauan *dashboard*, kejadian, insiden, *playbooks*, dan *audit trail*.
 
 ---
 
-## 3. Data Privacy & Ethical Guardrails
+## 2. Keamanan Ingesti Log & Validasi Input
 
-- **No Real User/Organization Data**: Tidak ada data pribadi (PII) atau data organisasi nyata yang digunakan.
-- **Defensive-Only Scope**: Platform tidak memiliki modul serangan balik, eksploitasi, atau pemindaian intrusif terhadap sistem eksternal.
+Implementasi kode sumber: [`backend/app/services/ingestion_service.py`](../backend/app/services/ingestion_service.py).
+
+- **Tanpa Eksekusi Kode (`No Code/Command Execution`)**: Seluruh muatan log CSV maupun JSON diproses murni sebagai struktur data teks/JSON menggunakan `csv.DictReader` dan `json.loads`. Tidak ada penggunaan `eval()`, `exec()`, `pickle`, atau `subprocess` terhadap input log.
+- **Sanitasi Input**: Karakter kontrol berbahaya (seperti *null byte* `\x00` dan karakter kontrol non-cetak) dibersihkan dari seluruh atribut string sebelum disimpan ke PostgreSQL.
+- **Validasi Skema Pydantic v2**: Seluruh *request body* dan *query parameter* divalidasi secara ketat menggunakan skema Pydantic.
+
+---
+
+## 3. Penanganan Error, CORS, dan Kebersihan Rahasia (*Secret Hygiene*)
+
+- **Centralized Exception Handling**: [`backend/app/core/exceptions.py`](../backend/app/core/exceptions.py) menangkap `HTTPException`, `RequestValidationError`, dan `Exception` tidak terduga serta mengembalikan amplop JSON terstandar (`ErrorEnvelope`) tanpa pernah membocorkan *stack trace* internal atau *connection string* database kepada klien.
+- **Konfigurasi CORS Terbatas**: Daftar *origin* yang diizinkan dikendalikan melalui variabel lingkungan `BACKEND_CORS_ORIGINS` (default pengembangan: `http://localhost:3000,http://127.0.0.1:3000`).
+- **Zero-Secret Repository**: File `.env` diabaikan oleh `.gitignore`; repositori hanya menyertakan `.env.example` dengan nilai contoh non-sensitif.
+- **Imutabilitas Audit Trail**: Seluruh tindakan autentikasi, perubahan aset, impor log, eksekusi deteksi/korelasi, dan perubahan status insiden direkam secara otomatis ke tabel `audit_logs`.

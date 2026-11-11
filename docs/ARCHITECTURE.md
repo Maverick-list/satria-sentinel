@@ -1,75 +1,61 @@
 # SATRIA SENTINEL — System Architecture
 
-## 1. High-Level Architecture
-
-SATRIA SENTINEL menerapkan arsitektur *layered modular monorepo* yang memisahkan tanggung jawab antara presentasi (Next.js App Router), layanan aplikasi & domain (FastAPI), dan persistensi relasional (PostgreSQL).
+## 1. Arsitektur Tingkat Tinggi (*High-Level Architecture*)
 
 ```mermaid
 flowchart LR
-    subgraph Client["Frontend (Next.js App Router :3000)"]
-        UI["Command Center UI\n(7 Pages + AppShell)"]
-        Hooks["React Hooks\n(useBackendHealth)"]
-        ApiClient["Typed API Client\n(src/services/api-client.ts)"]
-        UI --> Hooks --> ApiClient
+    subgraph Client["Frontend — Next.js 15 App Router (:3000)"]
+        UI_Dash["Dashboard & Risk Overview"]
+        UI_Assets["Asset Inventory CRUD"]
+        UI_Events["Log Ingestion, Synthetic Gen & Detections"]
+        UI_Inc["Incident Case Management & Timeline"]
+        UI_PB["Advisory Response Playbooks"]
+        UI_Audit["Immutable Audit Trail"]
+        UI_Auth["Auth & RBAC Context (JWT)"]
     end
 
-    subgraph Server["Backend (FastAPI :8000)"]
-        MW["Security Headers, CORS\n& Request-ID Middleware"]
-        Router["API v1 Router\n(/api/v1/health)"]
-        Service["Application Services\n(HealthService)"]
-        Repo["Repositories\n(BaseRepository, HealthRepository)"]
-        ORM["SQLAlchemy 2.x ORM Models\n& Alembic Migrations"]
-        MW --> Router --> Service --> Repo --> ORM
+    subgraph API["Backend — FastAPI REST API (:8000 /api/v1)"]
+        MW_Auth["JWT Auth & RBAC Dependencies"]
+        R_Ingest["Ingestion & Synthetic Generator Service"]
+        R_Detect["Deterministic Rule Detection Engine"]
+        R_Corr["Multi-Factor Event Correlation Engine"]
+        R_Risk["0-100 Composite Risk Scoring Engine"]
+        R_Inc["Incident & Playbook Workflow Service"]
+        R_Audit["Audit Trail Service"]
     end
 
-    subgraph Data["Database (:5432)"]
-        PG[("PostgreSQL 16\n7 Core Tables")]
+    subgraph DB["Persistence — PostgreSQL 16 (:5432)"]
+        PG[("PostgreSQL 16\n7 Core Tables\nAlembic Migrations 0001 & 0002")]
     end
 
-    ApiClient -->|"HTTP JSON (/api/v1)"| MW
-    ORM -->|"psycopg v3 pool"| PG
+    Client <-->|"HTTP JSON + Bearer JWT"| API
+    API <-->|"SQLAlchemy 2.0 ORM"| PG
 ```
 
 ---
 
-## 2. Backend Layered Architecture (`backend/app/`)
+## 2. Pemisahan Lapisan Backend (`backend/app/`)
 
-Backend dirancang agar setiap lapisan memiliki tanggung jawab tunggal (*Single Responsibility Principle*):
-
-1. **`app/core/` (Core Configuration & Cross-Cutting Concerns)**
-   - `config.py`: Memuat dan memvalidasi environment variable menggunakan `pydantic-settings` (`Settings`).
-   - `logging.py`: Mengonfigurasi *structured JSON logging* (`StructuredJsonFormatter`) ke `stdout` dengan atribut `timestamp`, `level`, `logger`, `message`, dan `request_id`.
-   - `exceptions.py`: Menangani `AppError`, `HTTPException`, `RequestValidationError`, dan `Exception` tak terduga ke dalam format amplop JSON standar (`error.code`, `error.message`, `error.request_id`, `error.timestamp`) tanpa pernah menampilkan *stack trace* ke pengguna.
-2. **`app/db/` (Database Connection & Declarative Base)**
-   - `base.py`: Mendefinisikan `Base` (`DeclarativeBase`) dengan konvensi penamaan constraint PostgreSQL (`pk_`, `fk_`, `ix_`, `uq_`), serta mixin `UUIDPrimaryKeyMixin` dan `TimestampMixin`.
-   - `session.py`: Mengelola `engine` (`pool_pre_ping=True`) dan dependency `get_db()` per HTTP request.
-3. **`app/models/` (Domain ORM Models)**
-   - Mengimplementasikan 7 tabel utama: `User`, `Asset`, `SecurityEvent`, `ResponsePlaybook`, `Incident`, `IncidentEvent`, dan `AuditLog`.
-4. **`app/schemas/` (Pydantic v2 Schemas)**
-   - Memvalidasi parameter input (`HealthCheckQuery`, `PaginationParams`) dengan `extra="forbid"` dan menyerialisasi respons (`HealthCheckResponse`).
-5. **`app/repositories/` (Data Access Layer)**
-   - `base.py`: `BaseRepository[ModelType]` generik untuk operasi pembacaan ORM.
-   - `health_repository.py`: `HealthRepository` yang menjalankan probe `SELECT 1`, menghitung latensi dalam milidetik, dan memeriksa keberadaan 7 tabel fondasi melalui SQLAlchemy inspector.
-6. **`app/services/` (Service Layer)**
-   - `health_service.py`: Mengorkestrasi pemeriksaan kesehatan sistem dan menangani kegagalan koneksi database secara *graceful* (mengembalikan status `degraded` / HTTP `503` tanpa membocorkan string koneksi).
-7. **`app/api/v1/` (Presentation / HTTP Layer)**
-   - `routes/health.py`: Menyediakan endpoint `GET /api/v1/health`.
+- **`api/deps.py`**: *Dependency injection* untuk autentikasi Bearer JWT (`get_current_user`) dan otorisasi berbasis peran (`require_viewer_or_above`, `require_analyst_or_admin`, `require_admin`).
+- **`api/v1/routes/`**: 12 modul *endpoint* RESTful (`health`, `auth`, `users`, `assets`, `security_events`, `log_ingestion`, `detections`, `correlations`, `risk_assessments`, `incidents`, `playbooks`, `audit_logs`).
+- **`core/`**: Konfigurasi berbasis *environment variables* (`config.py`), kriptografi password `scrypt` & JWT HS256 (`security.py`), penanganan *exception* terpusat tanpa kebocoran *stack trace* (`exceptions.py`), dan *structured JSON logging* (`logging.py`).
+- **`models/`**: Model ORM SQLAlchemy 2.0 untuk 7 tabel inti beserta enumerasi domain.
+- **`schemas/`**: Skema validasi input/output Pydantic v2 (`operational.py`, `health.py`, `common.py`).
+- **`services/`**: Logika bisnis inti dan mesin keamanan:
+  - `synthetic_generator.py`: Generator 6 skenario log keamanan simulasi.
+  - `ingestion_service.py`: Parser CSV/JSON, sanitasi input, dan deduplikasi SHA-256.
+  - `detection_engine.py`: Mesin evaluasi 6 aturan deteksi deterministik.
+  - `correlation_engine.py`: Mesin pengelompokan kejadian keamanan multi-faktor.
+  - `risk_engine.py`: Mesin perhitungan skor risiko komposit `0–100`.
+  - `audit_service.py`: Pencatatan jejak audit operasional.
+  - `bootstrap_service.py`: Inisialisasi idempoten akun RBAC, aset awal, dan katalog *playbooks*.
 
 ---
 
-## 3. Frontend Layered Architecture (`frontend/src/`)
+## 3. Pemisahan Lapisan Frontend (`frontend/src/`)
 
-1. **`src/app/` (Next.js App Router Pages)**
-   - Mengimplementasikan 7 rute utama: `/` (Dashboard), `/assets`, `/security-events`, `/incidents`, `/playbooks`, `/audit-logs`, dan `/settings`.
-2. **`src/components/` (Reusable UI & Layout)**
-   - `ui/`: Komponen primitif bergaya `shadcn/ui` (`Button`, `Card`, `Badge`, `Separator`).
-   - `layout/`: `AppShell`, `SidebarNav`, dan `TopHeader` responsif (mendukung desktop sidebar & mobile drawer).
-3. **`src/features/` (Feature Modules)**
-   - `health/`: `SystemHealthPanel` (komunikasi nyata ke `/api/v1/health`) dan `SchemaReadinessChart` (visualisasi Recharts untuk profil kolom & indeks aktual dari 7 tabel database).
-   - `modules/`: `ModuleFoundationView` yang menyajikan spesifikasi tabel, *foreign keys*, indeks, dan roadmap Phase 2 secara transparan.
-   - `navigation/`: Definisi terpusat menu navigasi Command Center.
-4. **`src/services/` & `src/hooks/`**
-   - `api-client.ts`: Wrapper `fetch` bertipe kuat (`apiFetch<T>`) dengan penanganan `ApiClientError`.
-   - `health-service.ts` & `use-backend-health.ts`: Mengambil dan menyegarkan status kesehatan backend secara reaktif.
-5. **`src/types/` & `src/lib/`**
-   - Kontrak TypeScript yang selaras dengan Pydantic schema di backend.
+- **`app/`**: Halaman Next.js App Router (`/`, `/assets`, `/security-events`, `/incidents`, `/playbooks`, `/audit-logs`, `/settings`).
+- **`features/auth/auth-context.tsx`**: Penyedia konteks sesi JWT, pergantian peran operator (*Admin*, *Analyst*, *Viewer*), dan sistem *toast notification*.
+- **`services/`**: Klien HTTP generik (`api-client.ts`) dengan dukungan *Bearer token* dan modul layanan terketik (`operational-service.ts`, `health-service.ts`).
+- **`types/`**: Definisi tipe TypeScript yang selaras dengan skema Pydantic *backend* (`operational.ts`, `health.ts`).
+- **`components/`**: Komponen tata letak (`app-shell.tsx`, `sidebar-nav.tsx`, `top-header.tsx`) dan elemen UI (`card.tsx`, `badge.tsx`, `button.tsx`).

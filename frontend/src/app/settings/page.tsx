@@ -1,4 +1,7 @@
-import { Settings, ShieldCheck, Sliders, Terminal } from "lucide-react";
+"use client";
+
+import { useEffect, useState } from "react";
+import { Settings, ShieldCheck, Sliders, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -7,11 +10,36 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useAuth } from "@/features/auth/auth-context";
 import { SystemHealthPanel } from "@/features/health/system-health-panel";
 import { getApiBaseUrl } from "@/services/api-client";
+import {
+  listDetectionRulesApi,
+  listUsersApi,
+} from "@/services/operational-service";
+import type { AuthUser, DetectionRuleItem } from "@/types/operational";
 
 export default function SettingsPage() {
+  const { user, isLoading: authLoading } = useAuth();
+  const [rules, setRules] = useState<DetectionRuleItem[]>([]);
+  const [users, setUsers] = useState<AuthUser[]>([]);
   const apiBaseUrl = getApiBaseUrl();
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    void (async () => {
+      try {
+        const [rulesData, usersData] = await Promise.all([
+          listDetectionRulesApi(),
+          listUsersApi(),
+        ]);
+        setRules(rulesData.rules);
+        setUsers(usersData.items);
+      } catch {
+        // Keep empty if unauthorized
+      }
+    })();
+  }, [authLoading, user]);
 
   return (
     <div className="space-y-6">
@@ -28,13 +56,13 @@ export default function SettingsPage() {
               Platform Settings & Security Baseline
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Runtime environment configuration, API integration endpoint, and
-              Phase 1 defensive guardrails.
+              RBAC role matrix, deterministic detection rule catalog, and
+              runtime environment configuration.
             </p>
           </div>
         </div>
         <Badge variant="default" className="self-start sm:self-center">
-          Environment Configured
+          Phase 2 Security Engine Active
         </Badge>
       </div>
 
@@ -44,32 +72,33 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Terminal className="h-4 w-4 text-emerald-400" />
-              <CardTitle>Frontend Runtime Configuration</CardTitle>
+              <Users className="h-4 w-4 text-emerald-400" />
+              <CardTitle>RBAC Accounts & Access Control Matrix</CardTitle>
             </div>
             <CardDescription>
-              Public environment variables injected safely at build/runtime.
+              Registered platform accounts (passwords hashed via RFC 7914
+              scrypt).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-xs">
-            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-              <p className="text-slate-400">NEXT_PUBLIC_APP_NAME</p>
-              <p className="mt-1 font-mono font-semibold text-slate-100">
-                {process.env.NEXT_PUBLIC_APP_NAME || "SATRIA SENTINEL"}
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-              <p className="text-slate-400">NEXT_PUBLIC_API_BASE_URL</p>
-              <p className="mt-1 font-mono font-semibold text-emerald-400">
-                {apiBaseUrl}
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-              <p className="text-slate-400">Theme Mode</p>
-              <p className="mt-1 font-mono text-slate-200">
-                Dark Navy & Emerald Command Center (Default Dark)
-              </p>
-            </div>
+            {users.map((u) => (
+              <div
+                key={u.id}
+                className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 p-3"
+              >
+                <div>
+                  <p className="font-semibold text-slate-100">
+                    {u.full_name} (@{u.username})
+                  </p>
+                  <p className="font-mono text-[11px] text-slate-400">
+                    {u.email}
+                  </p>
+                </div>
+                <Badge variant="default" className="font-mono uppercase">
+                  {u.role}
+                </Badge>
+              </div>
+            ))}
           </CardContent>
         </Card>
 
@@ -80,7 +109,7 @@ export default function SettingsPage() {
               <CardTitle>Enforced Security Baseline</CardTitle>
             </div>
             <CardDescription>
-              Security controls active across Backend, Database, and Frontend.
+              API Endpoint: <code className="font-mono text-emerald-400">{apiBaseUrl}</code>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -88,52 +117,83 @@ export default function SettingsPage() {
               <li className="flex items-start gap-2.5">
                 <Sliders className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
                 <span>
-                  <strong>No Secrets in Source Code:</strong> All credentials
-                  and URLs are loaded via environment variables (
-                  <code className="font-mono text-emerald-300">.env</code> is
-                  gitignored; <code className="font-mono text-emerald-300">.env.example</code>{" "}
-                  contains safe placeholders).
+                  <strong>Memory-Hard Password Hashing & HS256 JWT:</strong>{" "}
+                  Credentials hashed with random-salted{" "}
+                  <code className="font-mono text-emerald-300">scrypt</code>;
+                  revocation enforced immediately on logout.
                 </span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Sliders className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
                 <span>
-                  <strong>Zero Stack-Trace Leakage:</strong> FastAPI centralized
-                  exception handlers return structured{" "}
-                  <code className="font-mono text-emerald-300">request_id</code>{" "}
-                  envelopes without internal stack traces.
-                </span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Sliders className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>
-                  <strong>Environment-Restricted CORS:</strong> Allowed origins
-                  are parsed strictly from{" "}
-                  <code className="font-mono text-emerald-300">CORS_ORIGINS</code>.
-                </span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <Sliders className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>
-                  <strong>Defensive HTTP Headers:</strong>{" "}
+                  <strong>Role-Based Access Control (RBAC):</strong>{" "}
+                  <code className="font-mono text-emerald-300">admin</code>{" "}
+                  (Asset & User CRUD),{" "}
                   <code className="font-mono text-emerald-300">
-                    X-Content-Type-Options: nosniff
-                  </code>
-                  ,{" "}
-                  <code className="font-mono text-emerald-300">
-                    X-Frame-Options: DENY
-                  </code>
-                  , and{" "}
-                  <code className="font-mono text-emerald-300">
-                    X-Request-ID
+                    security_analyst
                   </code>{" "}
-                  correlation.
+                  (Log Ingestion, Detection, Incident Lifecycle), and{" "}
+                  <code className="font-mono text-emerald-300">viewer</code>{" "}
+                  (Read-Only).
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <Sliders className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span>
+                  <strong>Safe Log Ingestion:</strong> Strictly bounded payload
+                  size, schema validation, SHA-256 deduplication, and zero code
+                  execution.
                 </span>
               </li>
             </ul>
           </CardContent>
         </Card>
       </div>
+
+      {/* Detection Rules Catalog */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Rule-Based Threat Detection Catalog ({rules.length} Active Rules)
+          </CardTitle>
+          <CardDescription>
+            Transparent deterministic rules with MITRE ATT&CK mapping (no
+            black-box AI/ML claims).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {rules.map((rule) => (
+              <div
+                key={rule.rule_id}
+                className="rounded-lg border border-slate-800 bg-slate-950/70 p-3.5 text-xs space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-emerald-400">
+                    {rule.rule_id} (v{rule.version})
+                  </span>
+                  <Badge
+                    variant={
+                      rule.severity === "critical" ? "destructive" : "warning"
+                    }
+                  >
+                    {rule.severity.toUpperCase()} • Conf{" "}
+                    {Math.round(rule.confidence * 100)}%
+                  </Badge>
+                </div>
+                <p className="font-semibold text-slate-100">{rule.rule_name}</p>
+                <p className="text-slate-400">{rule.description}</p>
+                <p className="font-mono text-[11px] text-emerald-300">
+                  Condition: {rule.detection_condition}
+                </p>
+                <p className="text-[11px] text-slate-300">
+                  MITRE: {rule.mitre_tactic} / {rule.mitre_technique}
+                </p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
