@@ -15,7 +15,7 @@ Dokumen ini mendokumentasikan spesifikasi teknis lengkap dari 7 entitas database
 | `incidents` | `Incident` | Tiket insiden keamanan hasil eskalasi atau korelasi | `id` (UUID) | `assigned_to_id` $\to$ `users.id`, `playbook_id` $\to$ `response_playbooks.id` |
 | `incident_events` | `IncidentEvent` | Tabel asosiasi Many-to-Many antara Insiden dan Event | `id` (UUID) | `incident_id` $\to$ `incidents.id`, `security_event_id` $\to$ `security_events.id` |
 | `response_playbooks`| `ResponsePlaybook`| Standar Operasional Prosedur (SOP) respons terpandu | `id` (UUID) | Tidak ada |
-| `audit_logs` | `AuditLog` | Catatan jejak audit yang tidak dapat diubah (append-only) | `id` (UUID) | `actor_user_id` $\to$ `users.id` |
+| `audit_logs` | `AuditLog` | Application-level append-only audit logging (direct DB modification not technically prevented) | `id` (UUID) | `actor_user_id` $\to$ `users.id` |
 
 ---
 
@@ -130,7 +130,7 @@ Katalog Standard Operating Procedure (SOP) penanganan insiden yang selaras denga
 | `updated_at` | `TIMESTAMPTZ` | No | `now()` | Waktu revisi SOP |
 
 ### 2.7 Tabel `audit_logs`
-Tabel jejak audit yang bersifat append-only tanpa endpoint modifikasi atau penghapusan data.
+Tabel jejak audit dengan sifat application-level append-only audit logging; direct database modification is not technically prevented. Tidak ada rute API mutasi (POST/PUT/PATCH/DELETE) yang diekspos untuk tabel ini.
 
 | Kolom | Tipe Data | Nullable | Default / Atribut | Keterangan |
 | :--- | :--- | :---: | :--- | :--- |

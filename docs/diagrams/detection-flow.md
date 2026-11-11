@@ -1,6 +1,6 @@
 # Diagram Alur Deteksi Ancaman (Detection Flow)
 
-Diagram alur ini merinci evaluasi 6 aturan deteksi deterministik berbasis SOP keamanan siber:
+Diagram alur ini merinci evaluasi 6 aturan deteksi deterministik sesuai kode implementasi aktual di [`backend/app/services/detection_engine.py`](file:///home/firza-ilmi/.gemini/antigravity/scratch/satria-sentinel/backend/app/services/detection_engine.py):
 
 ```mermaid
 flowchart TD
@@ -11,14 +11,14 @@ flowchart TD
     
     InsertDB --> RuleEngine["Evaluasi Mesin Deteksi Deterministik"]
     
-    RuleEngine --> R1{"SATRIA-RULE-BF-001<br/>Gagal Login Berulang?<br/>(count >= 5, window <= 10m)"}
-    RuleEngine --> R2{"SATRIA-RULE-ANOM-002<br/>Login Jam Tidak Wajar?<br/>(23:00 - 05:00 UTC/WIB)"}
-    RuleEngine --> R3{"SATRIA-RULE-PRIV-003<br/>Eskalasi Hak Akses?<br/>(sudo/setuid/admin grant)"}
-    RuleEngine --> R4{"SATRIA-RULE-EXFIL-004<br/>Trafik Keluar Mencurigakan?<br/>(bytes > 50MB atau non-std port)"}
-    RuleEngine --> R5{"SATRIA-RULE-RECON-005<br/>Pola Port Scanning?<br/>(>= 10 unique target ports)"}
-    RuleEngine --> R6{"SATRIA-RULE-MALW-006<br/>Indikator Malware / C2?<br/>(Known bad IP/hash/command)"}
+    RuleEngine --> R1{"SATRIA-RULE-BF-001<br/>Brute-Force Indicator?<br/>(failed_attempts >= 5 / window <= 15m)"}
+    RuleEngine --> R2{"SATRIA-RULE-AUTH-002<br/>Suspicious Login Activity?<br/>(post_bruteforce / geo / off-hours)"}
+    RuleEngine --> R3{"SATRIA-RULE-ACC-003<br/>Unusual Access Frequency?<br/>(req/min >= 120 OR records >= 500)"}
+    RuleEngine --> R4{"SATRIA-RULE-PRIV-004<br/>Privilege Escalation?<br/>(root/admin/SYSTEM tanpa change ticket)"}
+    RuleEngine --> R5{"SATRIA-RULE-EXFIL-005<br/>Suspicious Outbound / Exfiltration?<br/>(bytes_out >= 50MB OR port 4444/1337/8443)"}
+    RuleEngine --> R6{"SATRIA-RULE-RECON-006<br/>Port Scanning & Reconnaissance?<br/>(distinct_ports_probed >= 15)"}
 
-    R1 -- Ya --> TagFinding["Beri Label Rule ID, Severity, & Bukti Telemetri"]
+    R1 -- Ya --> TagFinding["Beri Label Rule ID, Severity, Confidence, & Bukti Telemetri"]
     R2 -- Ya --> TagFinding
     R3 -- Ya --> TagFinding
     R4 -- Ya --> TagFinding

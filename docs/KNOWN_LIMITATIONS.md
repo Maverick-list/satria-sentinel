@@ -14,9 +14,9 @@ In compliance with competition guidelines and engineering integrity, the followi
 - **Limitation**: In a distributed multi-worker backend deployment (e.g. Gunicorn with multiple Uvicorn workers or clustered Kubernetes pods), revocation is isolated to the process handling the logout request.
 - **Production Recommendation**: Integrate Redis or database-backed token blacklisting with TTL matching token expiration.
 
-### 1.2 Application-Level Audit Log Immutability
-- **Current Behavior**: Audit logging is enforced as append-only at the API service layer. No `POST`, `PUT`, `PATCH`, or `DELETE` endpoints exist for audit logs.
-- **Limitation**: A PostgreSQL database administrator with direct SQL access could theoretically modify rows in the table.
+### 1.2 Application-Level Append-Only Audit Logging
+- **Current Behavior**: Application-level append-only audit logging; direct database modification is not technically prevented. No `POST`, `PUT`, `PATCH`, or `DELETE` endpoints exist for audit logs in the API layer.
+- **Limitation**: A PostgreSQL database administrator with direct superuser SQL access could technically modify or truncate rows in the table.
 - **Production Recommendation**: Implement PostgreSQL `BEFORE UPDATE OR DELETE` triggers that raise exceptions, or stream audit events in real-time to a write-once SIEM (e.g. Wazuh, Splunk, or immutable CloudWatch/Cloud Storage logs).
 
 ### 1.3 Advisory-Only Defensive Playbooks

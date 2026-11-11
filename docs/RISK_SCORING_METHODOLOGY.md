@@ -1,80 +1,89 @@
 # SATRIA SENTINEL — Explainable 5-Factor Risk Scoring Methodology
-**Modul**: `backend/app/services/risk_service.py`  
+**Modul Sumber**: [`backend/app/services/risk_engine.py`](file:///home/firza-ilmi/.gemini/antigravity/scratch/satria-sentinel/backend/app/services/risk_engine.py)  
 **Rentang Skor**: $0 \text{ hingga } 100$ (Integer)  
-**Karakteristik**: Deterministik, Transparan (*Explainable*), Bebas Halusinasi
+**Karakteristik**: Deterministik, Transparan (*Explainable*), Prioritisasi Operasional SOC (Bukan probabilitas statistik)
 
 ---
 
-## 1. Filosofi & Kebutuhan Penilaian Risiko
+## 1. Filosofi & Batasan Rekayasa
 
-Dalam operasi pertahanan siber pertahanan militer, skor risiko tidak boleh berupa angka acak atau hasil *black-box* AI yang tidak dapat dipertanggungjawabkan dalam pengadilan militer atau sidang evaluasi komando. 
+Mesin kalkulasi risiko SATRIA SENTINEL menghitung indeks prioritas triage operasional pada skala 0–100 untuk memandu analis SOC menentukan urutan penanganan ancaman. 
 
-SATRIA SENTINEL mengimplementasikan **Formula Penilaian Risiko 5-Faktor** yang terbukti secara matematis, dapat diaudit, dan memberikan transparansi penuh mengenai kontribusi masing-masing faktor bobot.
+> [!NOTE]
+> Skor ini dirancang sebagai indeks prioritas deterministik berbasis aturan dan konteks aset, **bukan** estimasi probabilitas statistik kompromi sistem dan **bukan** algoritma kecerdasan buatan *black-box*.
 
 ---
 
-## 2. Rincian 5 Faktor Pembobotan
+## 2. Formula Matematis Penilaian Risiko (5 Faktor)
 
-$$ \text{Raw Score} = W_{\text{severity}} + W_{\text{asset}} + W_{\text{confidence}} + W_{\text{volume}} + W_{\text{correlation}} $$
+Formula kalkulasi skor risiko dihitung secara aditif dari 5 komponen faktor berbobot:
+
+$$ \text{Raw Score} = W_{\text{severity}} + W_{\text{asset}} + W_{\text{confidence}} + W_{\text{volume}} + W_{\text{context}} $$
 $$ \text{Final Risk Score} = \min(100, \max(0, \text{Raw Score})) $$
 
-### Faktor 1: Event Severity Weight ($W_{\text{severity}} \in [10, 40]$)
-Mengukur potensi bahaya intrinsik dari tipe ancaman yang terdeteksi:
-- **Low Severity**: $10 \text{ poin}$
-- **Medium Severity**: $20 \text{ poin}$
-- **High Severity**: $30 \text{ poin}$
-- **Critical Severity**: $40 \text{ poin}$
+### Faktor 1: Event Severity ($W_{\text{severity}} \in [5, 35]$)
+Mencerminkan tingkat bahaya intrinsik dari tipe event keamanan yang terdeteksi:
+- **`critical`**: $35 \text{ poin}$
+- **`high`**: $28 \text{ poin}$
+- **`medium`**: $20 \text{ poin}$
+- **`low`**: $12 \text{ poin}$
+- **`informational`**: $5 \text{ poin}$
 
-### Faktor 2: Asset Criticality Weight ($W_{\text{asset}} \in [5, 25]$)
-Mengukur signifikansi operasional aset yang menjadi sasaran serangan:
-- **Low Criticality** (misal: Workstation pengujian non-operasional): $5 \text{ poin}$
-- **Medium Criticality** (misal: Server internal berkas non-kritis): $10 \text{ poin}$
-- **High Criticality** (misal: Identity Gateway / SSO Server): $18 \text{ poin}$
-- **Critical Asset** (misal: Server Komando & Pengendali KRI-01): $25 \text{ poin}$
+### Faktor 2: Asset Criticality ($W_{\text{asset}} \in [6, 25]$)
+Mencerminkan dampak terhadap kelangsungan operasional sistem jika aset terkait terkompromi:
+- **`critical`** (misal: Server Komando KRI-01): $25 \text{ poin}$
+- **`high`** (misal: Identity Gateway / SSO Gateway): $19 \text{ poin}$
+- **`medium`** (misal: Server aplikasi dan database internal): $12 \text{ poin}$
+- **`low`** (misal: Workstation pengujian): $6 \text{ poin}$
+- **`unlinked`** (Event tanpa aset terasosiasi / fallback): $8 \text{ poin}$
 
-### Faktor 3: Detection Confidence Weight ($W_{\text{confidence}} \in [0, 15]$)
-Mengukur tingkat kepastian algoritma deteksi terhadap indikasi ancaman:
-$$ W_{\text{confidence}} = \text{round}(\text{confidence\_float} \times 15) $$
-- Deteksi heuristik anomali jam (Confidence 0.75): $11 \text{ poin}$
-- Deteksi pola brute force deterministik (Confidence 0.90): $14 \text{ poin}$
-- Deteksi perintah berbahaya persis (Confidence 0.95): $14 - 15 \text{ poin}$
+### Faktor 3: Detection Rule Confidence ($W_{\text{confidence}} \in [0, 20]$)
+Mencerminkan derajat kepastian aturan deteksi deterministik:
+$$ W_{\text{confidence}} = \min(20, \text{round}(\text{max\_confidence} \times 20.0)) $$
+- Contoh confidence $0.92$ (Privilege Escalation): $\text{round}(0.92 \times 20) = 18 \text{ poin}$
+- Contoh confidence $0.88$ (Brute Force): $\text{round}(0.88 \times 20) = 18 \text{ poin}$
+- Contoh confidence $0.80$ (Unusual Access): $\text{round}(0.80 \times 20) = 16 \text{ poin}$
+- Jika belum ada aturan yang terpicu: $0 \text{ poin}$
 
-### Faktor 4: Event Frequency & Volume Weight ($W_{\text{volume}} \in [2, 10]$)
-Mengukur frekuensi kejadian dalam jendela analisis untuk membedakan anomali insidental dari serangan persisten:
-- Kejadian tunggal ($1\times$): $2 \text{ poin}$
-- Kejadian minor ($2 - 4\times$): $5 \text{ poin}$
-- Kejadian berulang ($5 - 9\times$): $8 \text{ poin}$
-- Serangan masif ($\ge 10\times$): $10 \text{ poin}$
+### Faktor 4: Correlated Event Volume ($W_{\text{volume}} \in [0, 10]$)
+Mengukur kuantitas event keamanan yang teragregasi dalam klaster korelasi:
+- $\ge 5 \text{ event}$ terkait: $10 \text{ poin}$
+- $\ge 3 \text{ event}$ terkait: $7 \text{ poin}$
+- $2 \text{ event}$ terkait: $4 \text{ poin}$
+- $1 \text{ event}$ (tunggal): $0 \text{ poin}$
 
-### Faktor 5: Correlation Scope Weight ($W_{\text{correlation}} \in [0, 10]$)
-Mengukur apakah kejadian tersebut berdiri sendiri atau merupakan bagian dari serangan terkoordinasi lintas vektor:
-- Kejadian terisolasi tunggal: $0 \text{ poin}$
-- Klaster 2 hingga 4 event terkait: $5 \text{ poin}$
-- Klaster multivariat lintas aset ($\ge 5$ event atau multi-taktik): $10 \text{ poin}$
-
----
-
-## 3. Klasifikasi Level Risiko
-
-| Rentang Skor ($0-100$) | Level Risiko | Deskripsi Operasional | Kebijakan Tindakan SOC |
-| :---: | :---: | :--- | :--- |
-| **$0 - 39$** | **LOW** | Anomali kecil tanpa indikasi bahaya langsung. | Pemantauan rutin; tidak memerlukan eskalasi darurat. |
-| **$40 - 69$** | **MEDIUM** | Aktivitas mencurigakan pada aset biasa. | Peninjauan terencana oleh analis Tier 1 dalam 4 jam kerja. |
-| **$70 - 84$** | **HIGH** | Serangan terkonfirmasi pada aset bernilai tinggi. | Eskalasi segera ke Analis Senior; isolasi dalam 30 menit. |
-| **$85 - 100$** | **CRITICAL** | Ancaman eksfiltrasi atau pengambilalihan aset strategis komando. | Respons darurat instan; eksekusi SOP kontainmen dan notifikasi komando. |
+### Faktor 5: Operational & Temporal Context ($W_{\text{context}} \in [0, 10]$)
+Mengakomodasi faktor kontekstual tambahan yang memperberat risiko:
+- **Lingkungan Produksi** (`is_production == True`): $+4 \text{ poin}$
+- **Aktivitas Terkini** (Stempel waktu $\le 24 \text{ jam}$ dari sekarang): $+3 \text{ poin}$
+- **Multi-Rule / Multi-Tactic** ($\ge 2$ aturan atau taktik berbeda dalam klaster): $+3 \text{ poin}$
+- Batas atas faktor konteks: $\min(10, \text{total context points})$
 
 ---
 
-## 4. Contoh Perhitungan Nyata
+## 3. Klasifikasi Level Risiko (*Canonical Risk Levels*)
 
-### Skenario: Serangan Brute Force pada Server Komando KRI-01
-- **Severity**: `high` $\implies W_{\text{severity}} = 30$
-- **Asset**: KRI-01 Command Server (`critical`) $\implies W_{\text{asset}} = 25$
-- **Confidence**: Deterministic rule match ($0.90$) $\implies W_{\text{confidence}} = \text{round}(0.90 \times 15) = 14$
-- **Volume**: 12 kali gagal login $\implies W_{\text{volume}} = 10$
-- **Correlation**: Terkait dengan percobaan port scanning sebelumnya $\implies W_{\text{correlation}} = 5$
+Hasil skor akhir ($0 - 100$) diklasifikasikan ke dalam 4 kategori kanonikal:
 
-$$ \text{Total Skor Mentah} = 30 + 25 + 14 + 10 + 5 = 84 $$
-$$ \text{Hasil Akhir} = 84 \implies \textbf{HIGH RISK (Level 3 / Prioritas Tinggi)} $$
+| Rentang Skor | Level Risiko | Rekomendasi Tindakan Operasional SOC |
+| :---: | :---: | :--- |
+| **$80 - 100$** | **CRITICAL** | Ancaman mendesak pada aset kritis produksi; aktivasi kontainmen darurat. |
+| **$55 - 79$** | **HIGH** | Aktivitas ancaman terkonfirmasi berprioritas tinggi; investigasi dalam 30 menit. |
+| **$30 - 54$** | **MEDIUM** | Anomali terindikasi; evaluasi terencana oleh analis dalam antrean kerja. |
+| **$0 - 29$** | **LOW** | Anomali minor / informational; pemantauan telemetri rutin. |
 
-Penjelasan ini disajikan secara transparan di panel antarmuka dasbor sehingga analis dapat memvalidasi setiap komponen angka risiko.
+---
+
+## 4. Contoh Perhitungan Nyata Berdasarkan Kode Sumber
+
+### Skenario: Eksfiltrasi Egress Egress pada Server Komando KRI-01
+- **Severity**: `critical` $\implies W_{\text{severity}} = 35$
+- **Asset**: KRI-01 (`critical`, `production`) $\implies W_{\text{asset}} = 25$
+- **Rule**: `SATRIA-RULE-EXFIL-005` (Confidence $0.90$) $\implies W_{\text{confidence}} = \text{round}(0.90 \times 20) = 18$
+- **Volume**: 6 event egress berkorelasi $\implies W_{\text{volume}} = 10$
+- **Context**: Produksi (+4), terjadi dalam 24 jam (+3) $\implies W_{\text{context}} = 7$
+
+$$ \text{Total Skor} = 35 + 25 + 18 + 10 + 7 = 95 $$
+$$ \text{Skor Akhir} = 95 \implies \textbf{CRITICAL RISK} $$
+
+Setiap komponen angka ini diekspos dalam objek `risk_breakdown` sehingga analis dapat memverifikasi rasionalitas penilaian secara transparan di antarmuka sistem.

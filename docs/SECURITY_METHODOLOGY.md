@@ -51,10 +51,11 @@ Untuk mencegah serangan injeksi kode dan penolakan layanan:
 
 ---
 
-## 4. Jejak Audit yang Tidak Dapat Diubah (Immutable Audit Trail)
+## 4. Jejak Audit Tingkat Aplikasi (Application-Level Append-Only Audit Logging)
 
 - Seluruh tindakan keamanan sensitif (login berhasil, login gagal, penambahan aset, ingesti log, eskalasi insiden, penugasan analis, transisi status, penambahan catatan investigasi, resolusi insiden) dicatat secara otomatis ke dalam tabel `audit_logs`.
-- **Perlindungan Immutability**:
-  - API hanya menyediakan rute `GET /api/v1/audit-logs`.
+- **Karakteristik & Batasan Implementasi**:
+  - Penegakan sifat append-only diimplementasikan pada tingkat aplikasi dan API service layer: API hanya menyediakan rute `GET /api/v1/audit-logs`.
   - Tidak ada rute `POST`, `PUT`, `PATCH`, atau `DELETE` yang diekspos untuk tabel audit.
+  - *Batasan Teknis*: Modifikasi langsung pada tingkat database PostgreSQL (misalnya oleh DBA dengan kredensial superuser) tidak dicegah secara teknis dalam prototipe ini.
   - Nilai rahasia (seperti kata sandi, token, atau private key) otomatis disaring dan di-redact sebelum ditulis ke audit log.

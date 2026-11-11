@@ -94,7 +94,7 @@ Platform ini fokus pada pilar **Penangkalan**, yaitu menghentikan, melokalisir, 
 |    - Security Events Queue & Telemetry Inspector                  |
 |    - Incident Investigation Workspace & Chronological Timeline    |
 |    - Advisory Playbooks Catalog & Interactive Matcher             |
-|    - Immutable Audit Logs & Platform Settings (RBAC Matrix)       |
+|    - Audit Logs (Append-Only) & Platform Settings (RBAC Matrix)   |
 +---------------------------------+---------------------------------+
                                   | REST API (/api/v1) + JWT HS256
 +---------------------------------v---------------------------------+
@@ -121,7 +121,7 @@ Platform ini fokus pada pilar **Penangkalan**, yaitu menghentikan, melokalisir, 
 
 ### Batasan Sistem Saat Ini (*Current Limitations*)
 1. **Pencabutan Token Bersifat Process-Local**: Mekanisme pembatalan JWT (*revocation registry*) saat logout disimpan pada memori proses backend (`set[str]`), sehingga dalam arsitektur multi-worker membutuhkan integrasi shared cache (misal Redis) untuk sinkronisasi lintas proses.
-2. **Jejak Audit Imutabel pada Tingkat Aplikasi**: Keutuhan jejak audit dijamin secara ketat oleh ketiadaan rute API `UPDATE` atau `DELETE`; namun pada level database raw, proteksi memerlukan konfigurasi izin database write-only atau media WORM.
+2. **Jejak Audit Append-Only Tingkat Aplikasi**: Keutuhan jejak audit dijamin pada tingkat aplikasi/API (ketiadaan rute API `UPDATE` atau `DELETE`); modifikasi langsung pada tingkat database PostgreSQL tidak dicegah secara teknis. Pada sistem produksi, hal ini memerlukan penguncian media WORM atau trigger database.
 3. **Penyajian Rekomendasi Bersifat Penasihat (*Advisory*)**: SATRIA SENTINEL sengaja tidak mengeksekusi script isolasi host otomatis demi keamanan operasional pada prototype kompetisi ini.
 
 ### Rencana Pengembangan Masa Depan (*Roadmap*)
