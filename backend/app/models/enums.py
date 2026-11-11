@@ -5,6 +5,9 @@ from enum import StrEnum
 
 class UserRole(StrEnum):
     ADMIN = "admin"
+    SECURITY_ANALYST = "security_analyst"
+    VIEWER = "viewer"
+    # Phase 1 compatibility aliases
     SOC_LEAD = "soc_lead"
     SOC_ANALYST = "soc_analyst"
     AUDITOR = "auditor"
@@ -35,6 +38,13 @@ class AssetStatus(StrEnum):
 
 class SeverityLevel(StrEnum):
     INFORMATIONAL = "informational"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class RiskLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"

@@ -4,12 +4,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.enums import SecurityEventStatus, SeverityLevel
+from app.models.enums import RiskLevel, SecurityEventStatus, SeverityLevel
 
 if TYPE_CHECKING:
     from app.models.asset import Asset
@@ -60,6 +60,31 @@ class SecurityEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(100), index=True, nullable=True
     )
     raw_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+    event_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
+    )
+    is_synthetic: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    detection_reasons: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    correlation_group_id: Mapped[str | None] = mapped_column(
+        String(64), index=True, nullable=True
+    )
+    risk_score: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    risk_level: Mapped[str] = mapped_column(
+        String(32),
+        default=RiskLevel.LOW.value,
+        server_default="low",
+        index=True,
+        nullable=False,
+    )
+    risk_breakdown: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, nullable=False
     )
     occurred_at: Mapped[datetime] = mapped_column(

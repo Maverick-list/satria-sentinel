@@ -12,6 +12,8 @@ from app.api.v1.router import api_v1_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
+from app.db.session import SessionLocal
+from app.services.bootstrap_service import ensure_initial_seed_data
 
 settings = get_settings()
 setup_logging(settings.LOG_LEVEL)
@@ -27,6 +29,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         settings.APP_VERSION,
         settings.ENVIRONMENT,
     )
+    try:
+        with SessionLocal() as db:
+            ensure_initial_seed_data(db)
+    except Exception as exc:
+        logger.warning("Bootstrap seed skipped during startup: %s", exc.__class__.__name__)
     yield
     logger.info("Shutting down %s", settings.PROJECT_NAME)
 

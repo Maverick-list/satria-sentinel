@@ -39,6 +39,13 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = Field(default="http://localhost:3000,http://127.0.0.1:3000")
 
+    JWT_SECRET_KEY: str = Field(
+        default="CHANGE_ME_JWT_SECRET_KEY_MIN_32_CHARS", min_length=16
+    )
+    JWT_ALGORITHM: Literal["HS256"] = Field(default="HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=120, ge=5, le=1440)
+    MAX_UPLOAD_SIZE_BYTES: int = Field(default=2_097_152, ge=1024, le=10_485_760)
+
     @field_validator("API_V1_PREFIX")
     @classmethod
     def validate_api_prefix(cls, value: str) -> str:

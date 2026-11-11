@@ -1,15 +1,15 @@
 """Incident entity model."""
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 import uuid
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.enums import IncidentStatus, SeverityLevel
+from app.models.enums import IncidentStatus, RiskLevel, SeverityLevel
 
 if TYPE_CHECKING:
     from app.models.incident_event import IncidentEvent
@@ -43,6 +43,22 @@ class Incident(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     risk_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    risk_level: Mapped[str] = mapped_column(
+        String(32),
+        default=RiskLevel.MEDIUM.value,
+        server_default="medium",
+        index=True,
+        nullable=False,
+    )
+    risk_breakdown: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+    correlation_explanation: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    timeline_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
     assigned_to_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

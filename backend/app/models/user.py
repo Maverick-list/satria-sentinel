@@ -31,7 +31,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(
         String(50),
-        default=UserRole.SOC_ANALYST.value,
+        default=UserRole.SECURITY_ANALYST.value,
         index=True,
         nullable=False,
     )
