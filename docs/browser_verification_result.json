@@ -1,0 +1,104 @@
+{
+  "timestamp": "2026-11-11T17:30:46.928Z",
+  "viewports": [
+    "Desktop (1440x900)",
+    "Mobile (390x844 - iPhone 14)"
+  ],
+  "pagesChecked": [
+    {
+      "name": "Command Center Dashboard",
+      "route": "/"
+    },
+    {
+      "name": "Assets Inventory",
+      "route": "/assets"
+    },
+    {
+      "name": "Security Events & Log Ingestion",
+      "route": "/security-events"
+    },
+    {
+      "name": "Detection Rules & Correlation",
+      "route": "/detection-correlation"
+    },
+    {
+      "name": "Incidents & Response Workspace",
+      "route": "/incidents"
+    },
+    {
+      "name": "Defensive Response Playbooks",
+      "route": "/playbooks"
+    },
+    {
+      "name": "Immutable Audit Logs",
+      "route": "/audit-logs"
+    },
+    {
+      "name": "Platform Settings & Security Baseline",
+      "route": "/settings"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "Authentication & Role Switching",
+      "expected": "Seamless role switching between admin, analyst, and viewer with JWT token update",
+      "actual": "Switched roles cleanly: initial=adminadmin, analyst=security_analyst, viewer=viewer",
+      "status": "PASS"
+    },
+    {
+      "name": "Dashboard Intelligence & Attention Queue",
+      "expected": "Analyst Priority Attention Queue, Asset Risk Overview, and Recent Incidents displayed",
+      "actual": "Panels visible: PriorityQueue=true, AssetRisk=true, RecentIncidents=true",
+      "status": "PASS"
+    },
+    {
+      "name": "Assets Inventory & Critical Asset Filter",
+      "expected": "Monitored digital assets displayed with criticality badges and metadata",
+      "actual": "Found 5 registered enterprise digital assets in assets table",
+      "status": "PASS"
+    },
+    {
+      "name": "Synthetic Security Event Ingestion",
+      "expected": "Synthetic security scenario generated and ingested with SHA-256 fingerprinting",
+      "actual": "Ingestion Summary (SYNTHETIC_GENERATOR): Received 1 • Imported 1 • Duplicates Skipped 0 • Failed 0 • Detections 1",
+      "status": "PASS"
+    },
+    {
+      "name": "Deterministic Detection Engine & Explainable Risk",
+      "expected": "Rules evaluated, supporting telemetry evidence extracted, and 5-factor risk score computed",
+      "actual": "MatchedRules=true, Evidence=true, RiskCalculation=true",
+      "status": "PASS"
+    },
+    {
+      "name": "Multi-Factor Event Correlation",
+      "expected": "Events grouped into correlated threat clusters based on time window, source IP, and target asset",
+      "actual": "Correlated Event Clusters visible: true",
+      "status": "PASS"
+    },
+    {
+      "name": "Incident Lifecycle (open -> investigating -> contained -> closed)",
+      "expected": "Incident assigned, notes added, status transitioned to investigating, contained, resolved with root cause, and closed in PostgreSQL",
+      "actual": "Timeline successfully updated with resolution & state transitions: hasResolved=true",
+      "status": "PASS"
+    },
+    {
+      "name": "Advisory Response Playbooks",
+      "expected": "5 NIST SP 800-61 aligned advisory response playbooks available (PB-IR-001 to PB-IR-005)",
+      "actual": "Found 5 active response playbooks with copyable containment commands",
+      "status": "PASS"
+    },
+    {
+      "name": "Immutable Audit Trail",
+      "expected": "All security-critical actions recorded with actor, action type, and client IP in append-only table",
+      "actual": "Audit log entries captured: hasAnalyst=true, hasOperationalActions=true",
+      "status": "PASS"
+    },
+    {
+      "name": "RBAC Viewer Write Restriction",
+      "expected": "Viewer role blocked from creating assets or modifying incidents",
+      "actual": "add-asset-btn count=0, incident-assign-submit count=0 (0 expected)",
+      "status": "PASS"
+    }
+  ],
+  "errors": []
+}
