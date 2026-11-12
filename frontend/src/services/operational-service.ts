@@ -155,6 +155,37 @@ export async function listDetectionRulesApi(): Promise<{
   return apiFetch("/detections/rules");
 }
 
+export async function listDetectionFindingsApi(): Promise<{
+  total_events_evaluated: number;
+  flagged_events_count: number;
+  findings: Array<{
+    event_id: string;
+    title: string;
+    event_type: string;
+    severity: string;
+    source_ip: string | null;
+    asset_id: string | null;
+    occurred_at: string;
+    risk_score: number;
+    risk_level: string;
+    detection_reasons: Array<{
+      rule_id: string;
+      rule_name: string;
+      rule_version: string;
+      severity: string;
+      confidence: number;
+      mitre_tactic: string;
+      mitre_technique: string;
+      reason: string;
+      recommended_action: string;
+      playbook_code: string;
+      matched_at: string;
+    }>;
+  }>;
+}> {
+  return apiFetch("/detections/findings");
+}
+
 export async function runDetectionScanApi(): Promise<{
   evaluated_events_count: number;
   flagged_events_count: number;

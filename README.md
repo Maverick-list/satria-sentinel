@@ -74,6 +74,10 @@ Seluruh tangkapan layar di bawah ini diambil langsung dari aplikasi prototipe ya
 *Pencatatan jejak audit append-only tingkat aplikasi untuk seluruh aksi operasional operator dan mutasi sistem.*  
 ![Application-Level Audit Logs](docs/screenshots/07_audit_logs_desktop.png)
 
+### Platform Settings & Security Baseline (`/settings`)
+*Konfigurasi baseline keamanan, matriks izin RBAC 3-level, dan verifikasi status kesehatan telemetri.*  
+![Platform Settings and Baseline](docs/screenshots/08_settings_desktop.png)
+
 ---
 
 ## 3. Tumpukan Teknologi Aktual (*Technology Stack*)

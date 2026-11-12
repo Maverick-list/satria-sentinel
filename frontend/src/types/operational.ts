@@ -144,6 +144,31 @@ export interface CorrelationCluster {
   }>;
 }
 
+export interface DetectionFindingItem {
+  event_id: string;
+  title: string;
+  event_type: string;
+  severity: string;
+  source_ip: string | null;
+  asset_id: string | null;
+  occurred_at: string;
+  risk_score: number;
+  risk_level: string;
+  detection_reasons: Array<{
+    rule_id: string;
+    rule_name: string;
+    rule_version: string;
+    severity: string;
+    confidence: number;
+    mitre_tactic: string;
+    mitre_technique: string;
+    reason: string;
+    recommended_action: string;
+    playbook_code: string;
+    matched_at: string;
+  }>;
+}
+
 export interface DetectionRuleItem {
   rule_id: string;
   rule_name: string;

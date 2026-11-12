@@ -51,7 +51,11 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              data-testid={`nav-link-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+              data-testid={
+                item.href === "/detection-correlation"
+                  ? "nav-link-detection-correlation"
+                  : `nav-link-${item.title.toLowerCase().replace(/\s+/g, "-")}`
+              }
               className={cn(
                 "group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
